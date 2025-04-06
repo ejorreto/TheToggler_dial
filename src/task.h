@@ -8,19 +8,19 @@ private:
     int id;
     std::string description;
     bool completed;
+    int projectId;
 
 public:
     // Constructor
-    Task(int taskId, const std::string& desc);
+    Task(int taskId, const std::string& desc, int projId);
 
     // Getters
     int getId() const;
     std::string getDescription() const;
-    bool isCompleted() const;
+    int getProjectId() const;
 
     // Setters
     void setDescription(const std::string& desc);
-    void setCompleted(bool status);
 
     // Utility methods
     std::string toString() const;

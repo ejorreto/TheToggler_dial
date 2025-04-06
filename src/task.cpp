@@ -1,7 +1,7 @@
 #include "task.h"
 
-Task::Task(int taskId, const std::string& desc) 
-    : id(taskId), description(desc), completed(false) {}
+Task::Task(int taskId, const std::string& desc, int projId) 
+    : id(taskId), description(desc), projectId(projId), completed(false) {}
 
 int Task::getId() const { 
     return id; 
@@ -11,16 +11,12 @@ std::string Task::getDescription() const {
     return description; 
 }
 
-bool Task::isCompleted() const { 
-    return completed; 
+int Task::getProjectId() const { 
+    return projectId; 
 }
 
 void Task::setDescription(const std::string& desc) { 
     description = desc; 
-}
-
-void Task::setCompleted(bool status) { 
-    completed = status; 
 }
 
 std::string Task::toString() const {
