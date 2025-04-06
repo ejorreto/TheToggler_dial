@@ -1,0 +1,3 @@
+[submodule "lib/Arduino-Toggl-API"]
+	path = lib/Arduino-Toggl-API
+	url = https://github.com/ejorreto/Arduino-Toggl-API.git
