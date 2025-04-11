@@ -6,6 +6,60 @@
 #include "credentials.h"
 #include "timeManager.h"
 
+#include "StateMachine.h"
+const int STATE_DELAY = 1000;
+
+StateMachine machine = StateMachine();
+
+void stateWorkplaceSelection();
+void stateTimeEntrySelection();
+
+State *S0 = machine.addState(&stateWorkplaceSelection);
+State *S1 = machine.addState(&stateTimeEntrySelection);
+State *nextState = nullptr;
+
+void stateWorkplaceSelection()
+{
+  if (machine.executeOnce)
+  {
+    M5Dial.Display.clear();
+    M5Dial.Display.drawString("Select workplace",
+                              M5Dial.Display.width() / 2,
+                              M5Dial.Display.height() / 2);
+  }
+  if (M5Dial.BtnA.wasPressed())
+  {
+    Serial.println("---- Workplace selected");
+    M5Dial.Display.clear();
+    M5Dial.Display.drawString("Workplace selected",
+                              M5Dial.Display.width() / 2,
+                              M5Dial.Display.height() / 2);
+    delay(1000);
+    nextState = S1;
+  }
+}
+
+void stateTimeEntrySelection()
+{
+  if (machine.executeOnce)
+  {
+    M5Dial.Display.clear();
+    M5Dial.Display.drawString("Select time entry",
+                              M5Dial.Display.width() / 2,
+                              M5Dial.Display.height() / 2);
+  }
+  if (M5Dial.BtnA.wasPressed())
+  {
+    Serial.println("---- Time entry selected");
+    M5Dial.Display.clear();
+    M5Dial.Display.drawString("Time entry selected",
+                              M5Dial.Display.width() / 2,
+                              M5Dial.Display.height() / 2);
+    delay(1000);
+    nextState = S0;
+  }
+}
+
 Task favouriteTasks[] = {
     Task(0, "Stop tracking", 0),
     Task(1, "Reu I", projectOneId),
@@ -80,9 +134,20 @@ void setup()
 
 long oldPosition = -999;
 
+
 void loop()
 {
   M5Dial.update();
+  // The following way to transition to a new state is required as per https://github.com/jrullan/StateMachine/issues/13
+  if (nextState)
+  {
+    machine.transitionTo(nextState);
+    nextState = nullptr;
+  }
+  machine.run();
+  return;
+
+  
   long newPosition = M5Dial.Encoder.read();
   if (newPosition != oldPosition)
   {
