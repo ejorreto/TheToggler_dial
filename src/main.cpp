@@ -4,6 +4,7 @@
 #include "Toggl.h"
 
 #include "credentials.h"
+#include "timeManager.h"
 
 Task favouriteTasks[] = {
     Task(0, "Stop tracking", 0),
@@ -16,6 +17,7 @@ Task favouriteTasks[] = {
 int numOfTasks = sizeof(favouriteTasks) / sizeof(favouriteTasks[0]);
 
 Toggl toggl;
+TimeManager timeManager;
 
 bool wifiConnect()
 {
@@ -57,17 +59,6 @@ bool wifiConnect()
   }
   delay(1000);
   return WiFi.status() == WL_CONNECTED;
-}
-
-String formatISODate(const String &dateTime)
-{
-  int decimalPos = dateTime.indexOf('.');
-  if (decimalPos != -1)
-  {
-    return dateTime.substring(0, decimalPos) + "Z";
-  }
-  // If no decimal point found, just append Z
-  return dateTime + "Z";
 }
 
 void setup()
@@ -154,10 +145,9 @@ void loop()
       }
       else
       {
-        String now = toggl.getCurrentTime("UTC");
-        if (now.length() > 0)
+        String currentTime = timeManager.getCurrentTime("UTC");
+        if (currentTime.length() > 1)
         {
-          currentTime = formatISODate(now.c_str());
           Serial.println(currentTime.c_str());
 
           M5Dial.Display.clear();
