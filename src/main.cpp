@@ -7,32 +7,43 @@
 #include "timeManager.h"
 
 #include "StateMachine.h"
+
+/* Global variables */
 const int STATE_DELAY = 1000;
-
 StateMachine machine = StateMachine();
-
-void stateWorkplaceSelection();
-void stateTimeEntrySelection();
-bool wifiConnect();
-
-State *S0 = machine.addState(&stateWorkplaceSelection);
-State *S1 = machine.addState(&stateTimeEntrySelection);
-State *nextState = nullptr;
+Toggl toggl;
+TimeManager timeManager;
 long oldPosition = -999;
 
 Task favouriteTasks[] = {
-  Task(0, "Stop tracking", 0),
-  Task(1, "Reu I", projectOneId),
-  Task(2, "Reu D", projectTwoId),
-  Task(3, "General", projectTwoId),
-  Task(4, "Task 4", projectTwoId),
-  Task(5, "Task 5", projectTwoId)};
+  Task(0, "Change workspace", 0),
+  Task(1, "Stop tracking", 0),
+  Task(2, "Reu I", projectOneId),
+  Task(3, "Reu D", projectTwoId),
+  Task(4, "General", projectTwoId),
+  Task(5, "Task 4", projectTwoId),
+  Task(6, "Task 5", projectTwoId)};
 
 int numOfTasks = sizeof(favouriteTasks) / sizeof(favouriteTasks[0]);
 
-Toggl toggl;
-TimeManager timeManager;
+/* Functions declaration */
 
+// WiFi connection
+bool wifiConnect();
+
+// State machine functions
+void stateWorkplaceSelection();
+void stateTimeEntrySelection();
+
+/* State machine configuration */
+State *S0 = machine.addState(&stateWorkplaceSelection);
+State *S1 = machine.addState(&stateTimeEntrySelection);
+State *nextState = nullptr;
+
+/**
+ * @brief Workplace selection state function
+ * 
+ */
 void stateWorkplaceSelection()
 {
   if (machine.executeOnce)
@@ -54,6 +65,10 @@ void stateWorkplaceSelection()
   }
 }
 
+/**
+ * @brief Time entry selection state function
+ * 
+ */
 void stateTimeEntrySelection()
 {
   if (machine.executeOnce)
@@ -79,8 +94,6 @@ void stateTimeEntrySelection()
   TimeEntry newTimeEntry;
   if (M5Dial.BtnA.wasPressed())
   {
-    // M5Dial.Encoder.readAndReset();
-
     String currentTime = "No time";
 
     if ((WiFi.status() != WL_CONNECTED))
@@ -91,7 +104,16 @@ void stateTimeEntrySelection()
     if ((WiFi.status() == WL_CONNECTED))
     {
       int index = ((newPosition % numOfTasks) + numOfTasks) % numOfTasks;
-      if (index == 0)
+      if(index==0)
+      {
+        M5Dial.Display.clear();
+        M5Dial.Display.drawString("Change workspace",
+                                  M5Dial.Display.width() / 2,
+                                  M5Dial.Display.height() / 2);
+        delay(1000);
+        nextState = S0;
+      }
+      else if (index == 1)
       {
         M5Dial.Display.clear();
         M5Dial.Display.drawString("Stopping",
@@ -157,20 +179,14 @@ void stateTimeEntrySelection()
       }
     }
   }
-  // if (M5Dial.BtnA.wasPressed())
-  // {
-  //   Serial.println("---- Time entry selected");
-  //   M5Dial.Display.clear();
-  //   M5Dial.Display.drawString("Time entry selected",
-  //                             M5Dial.Display.width() / 2,
-  //                             M5Dial.Display.height() / 2);
-  //   delay(1000);
-  //   nextState = S0;
-  // }
 }
 
 
-
+/**
+ * @brief Try to connect to the main WiFi network. If it fails, try to connect to the fallback network.
+ * 
+ * @return bool Wifi connection status
+ */
 bool wifiConnect()
 {
   int numRetries = 5;
@@ -230,9 +246,6 @@ void setup()
   toggl.setAuth(Token);
 }
 
-
-
-
 void loop()
 {
   M5Dial.update();
@@ -243,12 +256,4 @@ void loop()
     nextState = nullptr;
   }
   machine.run();
-
-  
-  
-  if (M5Dial.BtnA.pressedFor(2000))
-  {
-
-    // M5Dial.Encoder.write(100);
-  }
 }
