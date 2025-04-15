@@ -8,6 +8,8 @@
 
 #include "StateMachine.h"
 
+#define MAX_NUM_WORKSPACES 10
+
 /* Global variables */
 const int STATE_DELAY = 1000;
 StateMachine machine = StateMachine();
@@ -16,13 +18,13 @@ TimeManager timeManager;
 long oldPosition = -999;
 
 Task favouriteTasks[] = {
-  Task(0, "Change workspace", 0),
-  Task(1, "Stop tracking", 0),
-  Task(2, "Reu I", projectOneId),
-  Task(3, "Reu D", projectTwoId),
-  Task(4, "General", projectTwoId),
-  Task(5, "Task 4", projectTwoId),
-  Task(6, "Task 5", projectTwoId)};
+    Task(0, "Change workspace", 0),
+    Task(1, "Stop tracking", 0),
+    Task(2, "Reu I", projectOneId),
+    Task(3, "Reu D", projectTwoId),
+    Task(4, "General", projectTwoId),
+    Task(5, "Task 4", projectTwoId),
+    Task(6, "Task 5", projectTwoId)};
 
 int numOfTasks = sizeof(favouriteTasks) / sizeof(favouriteTasks[0]);
 
@@ -40,19 +42,43 @@ State *S0 = machine.addState(&stateWorkplaceSelection);
 State *S1 = machine.addState(&stateTimeEntrySelection);
 State *nextState = nullptr;
 
+/* Workspaces */
+Workspace workspaces[MAX_NUM_WORKSPACES];
+uint32_t receivedWorkspaces = 0;
+
 /**
  * @brief Workplace selection state function
- * 
+ *
  */
 void stateWorkplaceSelection()
 {
+
   if (machine.executeOnce)
   {
+    if ((WiFi.status() != WL_CONNECTED))
+    {
+      wifiConnect();
+    }
+
     M5Dial.Display.clear();
     M5Dial.Display.drawString("Select workplace",
                               M5Dial.Display.width() / 2,
                               M5Dial.Display.height() / 2);
+    toggl.getWorkSpaces(workspaces, MAX_NUM_WORKSPACES, &receivedWorkspaces);
   }
+
+  long newPosition = M5Dial.Encoder.read();
+  if (newPosition != oldPosition)
+  {
+    M5Dial.Speaker.tone(8000, 20);
+    M5Dial.Display.clear();
+    oldPosition = newPosition;
+    Serial.println(newPosition);
+    M5Dial.Display.drawString(workspaces[((newPosition % receivedWorkspaces) + receivedWorkspaces) % receivedWorkspaces].getName().c_str(),
+                              M5Dial.Display.width() / 2,
+                              M5Dial.Display.height() / 2);
+  }
+
   if (M5Dial.BtnA.wasPressed())
   {
     Serial.println("---- Workplace selected");
@@ -67,7 +93,7 @@ void stateWorkplaceSelection()
 
 /**
  * @brief Time entry selection state function
- * 
+ *
  */
 void stateTimeEntrySelection()
 {
@@ -104,7 +130,7 @@ void stateTimeEntrySelection()
     if ((WiFi.status() == WL_CONNECTED))
     {
       int index = ((newPosition % numOfTasks) + numOfTasks) % numOfTasks;
-      if(index==0)
+      if (index == 0)
       {
         M5Dial.Display.clear();
         M5Dial.Display.drawString("Change workspace",
@@ -181,10 +207,9 @@ void stateTimeEntrySelection()
   }
 }
 
-
 /**
  * @brief Try to connect to the main WiFi network. If it fails, try to connect to the fallback network.
- * 
+ *
  * @return bool Wifi connection status
  */
 bool wifiConnect()
