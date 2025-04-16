@@ -10,6 +10,15 @@
 
 #define MAX_NUM_WORKSPACES 10
 
+typedef struct workspaceAndTasks
+{
+  int workspaceId;
+  Task *tasks;
+  uint8_t numOfTasks;
+} workspaceAndTasks;
+
+workspaceAndTasks registeredWorkspaces[MAX_NUM_WORKSPACES] = {0};
+
 /* Global variables */
 const int STATE_DELAY = 1000;
 StateMachine machine = StateMachine();
@@ -17,7 +26,7 @@ Toggl toggl;
 TimeManager timeManager;
 long oldPosition = -999;
 
-Task favouriteTasks[] = {
+Task workTasks[] = {
     Task(0, "Change workspace", 0),
     Task(1, "Stop tracking", 0),
     Task(2, "Reu I", projectOneId),
@@ -26,7 +35,21 @@ Task favouriteTasks[] = {
     Task(5, "Task 4", projectTwoId),
     Task(6, "Task 5", projectTwoId)};
 
-int numOfTasks = sizeof(favouriteTasks) / sizeof(favouriteTasks[0]);
+Task personalTasks[] = {
+    Task(0, "Change workspace", 0),
+    Task(1, "Stop tracking", 0),
+    Task(2, "Design", projectTwoId),
+    Task(3, "Implementation", projectTwoId)};
+
+void setupTasksMap()
+{
+  registeredWorkspaces[0].workspaceId = workspaceWorkId;
+  registeredWorkspaces[0].tasks = workTasks;
+  registeredWorkspaces[0].numOfTasks = sizeof(workTasks) / sizeof(workTasks[0]);
+  registeredWorkspaces[1].workspaceId = workspacePersonalId;
+  registeredWorkspaces[1].tasks = personalTasks;
+  registeredWorkspaces[1].numOfTasks = sizeof(personalTasks) / sizeof(personalTasks[0]);
+}
 
 /* Functions declaration */
 
@@ -45,7 +68,7 @@ State *nextState = nullptr;
 /* Workspaces */
 Workspace workspaces[MAX_NUM_WORKSPACES];
 uint32_t receivedWorkspaces = 0;
-int workspaceID = 0;
+int registeredWorkspaceIndex = -1;
 
 /**
  * @brief Workplace selection state function
@@ -65,7 +88,11 @@ void stateWorkplaceSelection()
     M5Dial.Display.drawString("Select workplace",
                               M5Dial.Display.width() / 2,
                               M5Dial.Display.height() / 2);
-    toggl.getWorkSpaces(workspaces, MAX_NUM_WORKSPACES, &receivedWorkspaces);
+    if (WiFi.status() == WL_CONNECTED)
+    {
+      toggl.getWorkSpaces(workspaces, MAX_NUM_WORKSPACES, &receivedWorkspaces);
+    }
+
     if (receivedWorkspaces == 0)
     {
       M5Dial.Display.clear();
@@ -96,6 +123,16 @@ void stateWorkplaceSelection()
       M5Dial.Display.drawString("Workplace selected",
                                 M5Dial.Display.width() / 2,
                                 M5Dial.Display.height() / 2);
+      /* Lets find the tasks for the selected workspace */
+      for(int i=0; i<MAX_NUM_WORKSPACES; i++)
+      {
+        if(registeredWorkspaces[i].workspaceId == workspaces[((newPosition % receivedWorkspaces) + receivedWorkspaces) % receivedWorkspaces].getId())
+        {
+          registeredWorkspaceIndex = i;
+          Serial.println("Using registered workspace: " + String(registeredWorkspaces[i].workspaceId));
+          break;
+        }
+      }
       delay(1000);
       nextState = S1;
     }
@@ -108,6 +145,10 @@ void stateWorkplaceSelection()
  */
 void stateTimeEntrySelection()
 {
+  int numOfTasks = registeredWorkspaces[registeredWorkspaceIndex].numOfTasks;
+  Task *selectedTasks = registeredWorkspaces[registeredWorkspaceIndex].tasks;
+  /* TODO Add protection in case none of the received workspaces is in the registeredWorkspaces map */
+
   if (machine.executeOnce)
   {
     M5Dial.Display.clear();
@@ -123,7 +164,8 @@ void stateTimeEntrySelection()
     M5Dial.Display.clear();
     oldPosition = newPosition;
     Serial.println(newPosition);
-    M5Dial.Display.drawString(favouriteTasks[((newPosition % numOfTasks) + numOfTasks) % numOfTasks].getDescription().c_str(),
+
+    M5Dial.Display.drawString(selectedTasks[((newPosition % numOfTasks) + numOfTasks) % numOfTasks].getDescription().c_str(),
                               M5Dial.Display.width() / 2,
                               M5Dial.Display.height() / 2);
   }
@@ -196,7 +238,8 @@ void stateTimeEntrySelection()
           Serial.println("---- Creating a new entry");
 
           String tags = "";
-          String timeID = toggl.CreateTimeEntry(favouriteTasks[index].getDescription().c_str(), tags, -1, currentTime.c_str(), favouriteTasks[index].getProjectId(), "TheToggler_dial", workspaceID, &newTimeEntry);
+          String timeID = toggl.CreateTimeEntry(selectedTasks[index].getDescription().c_str(), tags, -1, currentTime.c_str(), selectedTasks[index].getProjectId(), "TheToggler_dial", 
+          registeredWorkspaces[registeredWorkspaceIndex].workspaceId, &newTimeEntry);
           Serial.println(timeID.c_str());
           Serial.println("New time entry ID:");
           Serial.println(newTimeEntry.getId());
@@ -280,6 +323,8 @@ void setup()
   wifiConnect();
 
   toggl.setAuth(Token);
+
+  setupTasksMap();
 }
 
 void loop()
