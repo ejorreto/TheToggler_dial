@@ -38,8 +38,8 @@ Task workTasks[] = {
 Task personalTasks[] = {
     Task(0, "Change workspace", 0),
     Task(1, "Stop tracking", 0),
-    Task(2, "Design", projectTwoId),
-    Task(3, "Implementation", projectTwoId)};
+    Task(2, "Design", projectThreeId),
+    Task(3, "Implementation", projectThreeId)};
 
 void setupTasksMap()
 {
@@ -225,6 +225,7 @@ void stateTimeEntrySelection()
       }
       else
       {
+        /* Lets create a new time entry */
         String currentTime = timeManager.getCurrentTime("UTC");
         if (currentTime.length() > 1)
         {
@@ -238,6 +239,11 @@ void stateTimeEntrySelection()
           Serial.println("---- Creating a new entry");
 
           String tags = "";
+
+          Serial.println("Description: " + String(selectedTasks[index].getDescription().c_str()));
+          Serial.println("Project ID: " + String(selectedTasks[index].getProjectId()));
+          Serial.println("Workspace ID: " + String(registeredWorkspaces[registeredWorkspaceIndex].workspaceId));
+
           String timeID = toggl.CreateTimeEntry(selectedTasks[index].getDescription().c_str(), tags, -1, currentTime.c_str(), selectedTasks[index].getProjectId(), "TheToggler_dial", 
           registeredWorkspaces[registeredWorkspaceIndex].workspaceId, &newTimeEntry);
           Serial.println(timeID.c_str());
