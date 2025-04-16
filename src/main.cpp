@@ -45,6 +45,7 @@ State *nextState = nullptr;
 /* Workspaces */
 Workspace workspaces[MAX_NUM_WORKSPACES];
 uint32_t receivedWorkspaces = 0;
+int workspaceID = 0;
 
 /**
  * @brief Workplace selection state function
@@ -65,29 +66,39 @@ void stateWorkplaceSelection()
                               M5Dial.Display.width() / 2,
                               M5Dial.Display.height() / 2);
     toggl.getWorkSpaces(workspaces, MAX_NUM_WORKSPACES, &receivedWorkspaces);
+    if (receivedWorkspaces == 0)
+    {
+      M5Dial.Display.clear();
+      M5Dial.Display.drawString("No workspaces",
+                                M5Dial.Display.width() / 2,
+                                M5Dial.Display.height() / 2);
+    }
   }
 
-  long newPosition = M5Dial.Encoder.read();
-  if (newPosition != oldPosition)
+  if (receivedWorkspaces > 0)
   {
-    M5Dial.Speaker.tone(8000, 20);
-    M5Dial.Display.clear();
-    oldPosition = newPosition;
-    Serial.println(newPosition);
-    M5Dial.Display.drawString(workspaces[((newPosition % receivedWorkspaces) + receivedWorkspaces) % receivedWorkspaces].getName().c_str(),
-                              M5Dial.Display.width() / 2,
-                              M5Dial.Display.height() / 2);
-  }
+    long newPosition = M5Dial.Encoder.read();
+    if (newPosition != oldPosition)
+    {
+      M5Dial.Speaker.tone(8000, 20);
+      M5Dial.Display.clear();
+      oldPosition = newPosition;
+      Serial.println(newPosition);
+      M5Dial.Display.drawString(workspaces[((newPosition % receivedWorkspaces) + receivedWorkspaces) % receivedWorkspaces].getName().c_str(),
+                                M5Dial.Display.width() / 2,
+                                M5Dial.Display.height() / 2);
+    }
 
-  if (M5Dial.BtnA.wasPressed())
-  {
-    Serial.println("---- Workplace selected");
-    M5Dial.Display.clear();
-    M5Dial.Display.drawString("Workplace selected",
-                              M5Dial.Display.width() / 2,
-                              M5Dial.Display.height() / 2);
-    delay(1000);
-    nextState = S1;
+    if (M5Dial.BtnA.wasPressed())
+    {
+      Serial.println("---- Workplace selected");
+      M5Dial.Display.clear();
+      M5Dial.Display.drawString("Workplace selected",
+                                M5Dial.Display.width() / 2,
+                                M5Dial.Display.height() / 2);
+      delay(1000);
+      nextState = S1;
+    }
   }
 }
 
