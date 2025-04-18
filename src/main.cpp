@@ -8,6 +8,17 @@
 
 #include "StateMachine.h"
 
+#define MAX_NUM_WORKSPACES 10
+
+typedef struct workspaceAndTasks
+{
+  int workspaceId;
+  Task *tasks;
+  uint8_t numOfTasks;
+} workspaceAndTasks;
+
+workspaceAndTasks registeredWorkspaces[MAX_NUM_WORKSPACES] = {0};
+
 /* Global variables */
 const int STATE_DELAY = 1000;
 StateMachine machine = StateMachine();
@@ -15,16 +26,30 @@ Toggl toggl;
 TimeManager timeManager;
 long oldPosition = -999;
 
-Task favouriteTasks[] = {
-  Task(0, "Change workspace", 0),
-  Task(1, "Stop tracking", 0),
-  Task(2, "Reu I", projectOneId),
-  Task(3, "Reu D", projectTwoId),
-  Task(4, "General", projectTwoId),
-  Task(5, "Task 4", projectTwoId),
-  Task(6, "Task 5", projectTwoId)};
+Task workTasks[] = {
+    Task(0, "Change workspace", 0),
+    Task(1, "Stop tracking", 0),
+    Task(2, "Reu I", projectOneId),
+    Task(3, "Reu D", projectTwoId),
+    Task(4, "General", projectTwoId),
+    Task(5, "Task 4", projectTwoId),
+    Task(6, "Task 5", projectTwoId)};
 
-int numOfTasks = sizeof(favouriteTasks) / sizeof(favouriteTasks[0]);
+Task personalTasks[] = {
+    Task(0, "Change workspace", 0),
+    Task(1, "Stop tracking", 0),
+    Task(2, "Design", projectThreeId),
+    Task(3, "Implementation", projectThreeId)};
+
+void setupTasksMap()
+{
+  registeredWorkspaces[0].workspaceId = workspaceWorkId;
+  registeredWorkspaces[0].tasks = workTasks;
+  registeredWorkspaces[0].numOfTasks = sizeof(workTasks) / sizeof(workTasks[0]);
+  registeredWorkspaces[1].workspaceId = workspacePersonalId;
+  registeredWorkspaces[1].tasks = personalTasks;
+  registeredWorkspaces[1].numOfTasks = sizeof(personalTasks) / sizeof(personalTasks[0]);
+}
 
 /* Functions declaration */
 
@@ -40,37 +65,109 @@ State *S0 = machine.addState(&stateWorkplaceSelection);
 State *S1 = machine.addState(&stateTimeEntrySelection);
 State *nextState = nullptr;
 
+/* Workspaces */
+Workspace workspaces[MAX_NUM_WORKSPACES];
+uint32_t receivedWorkspaces = 0;
+int registeredWorkspaceIndex = -1;
+
 /**
  * @brief Workplace selection state function
- * 
+ *
  */
 void stateWorkplaceSelection()
 {
+  togglApiErrorCode_t errorCode = TOGGL_API_EC_OK;
   if (machine.executeOnce)
   {
-    M5Dial.Display.clear();
-    M5Dial.Display.drawString("Select workplace",
-                              M5Dial.Display.width() / 2,
-                              M5Dial.Display.height() / 2);
+    /* This will be executed only when entering the state */
+    if ((WiFi.status() != WL_CONNECTED))
+    {
+      wifiConnect();
+    }
+
+    if (WiFi.status() == WL_CONNECTED)
+    {
+      errorCode = toggl.getWorkSpaces(workspaces, MAX_NUM_WORKSPACES, &receivedWorkspaces);
+
+      if (errorCode != TOGGL_API_EC_OK)
+      {
+        M5Dial.Display.clear();
+        M5Dial.Display.drawString("Error " + String(errorCode),
+                                  M5Dial.Display.width() / 2,
+                                  M5Dial.Display.height() / 2);
+        /** @todo Display a more comprehensive error in the screen */
+        delay(1000);
+        nextState = S0;
+      }
+      else
+      {
+        if (receivedWorkspaces == 0)
+        {
+          M5Dial.Display.clear();
+          M5Dial.Display.drawString("No workspaces",
+                                    M5Dial.Display.width() / 2,
+                                    M5Dial.Display.height() / 2);
+        }
+        else
+        {
+          M5Dial.Display.clear();
+          M5Dial.Display.drawString("Select workplace",
+                                    M5Dial.Display.width() / 2,
+                                    M5Dial.Display.height() / 2);
+        }
+      }
+    }
   }
-  if (M5Dial.BtnA.wasPressed())
+
+  /* This will be executed cyclically while in this state */
+  if (receivedWorkspaces > 0)
   {
-    Serial.println("---- Workplace selected");
-    M5Dial.Display.clear();
-    M5Dial.Display.drawString("Workplace selected",
-                              M5Dial.Display.width() / 2,
-                              M5Dial.Display.height() / 2);
-    delay(1000);
-    nextState = S1;
+    long newPosition = M5Dial.Encoder.read();
+
+    if (newPosition != oldPosition)
+    {
+      M5Dial.Speaker.tone(8000, 20);
+      M5Dial.Display.clear();
+      oldPosition = newPosition;
+      Serial.println(newPosition);
+      M5Dial.Display.drawString(workspaces[((newPosition % receivedWorkspaces) + receivedWorkspaces) % receivedWorkspaces].getName().c_str(),
+                                M5Dial.Display.width() / 2,
+                                M5Dial.Display.height() / 2);
+    }
+
+    if (M5Dial.BtnA.wasPressed())
+    {
+      Serial.println("---- Workplace selected");
+      M5Dial.Display.clear();
+      M5Dial.Display.drawString("Workplace selected",
+                                M5Dial.Display.width() / 2,
+                                M5Dial.Display.height() / 2);
+      /* Lets find the tasks for the selected workspace */
+      for (int i = 0; i < MAX_NUM_WORKSPACES; i++)
+      {
+        if (registeredWorkspaces[i].workspaceId == workspaces[((newPosition % receivedWorkspaces) + receivedWorkspaces) % receivedWorkspaces].getId())
+        {
+          registeredWorkspaceIndex = i;
+          Serial.println("Using registered workspace: " + String(registeredWorkspaces[i].workspaceId));
+          break;
+        }
+      }
+      delay(1000);
+      nextState = S1;
+    }
   }
 }
 
 /**
  * @brief Time entry selection state function
- * 
+ *
  */
 void stateTimeEntrySelection()
 {
+  int numOfTasks = registeredWorkspaces[registeredWorkspaceIndex].numOfTasks;
+  Task *selectedTasks = registeredWorkspaces[registeredWorkspaceIndex].tasks;
+  /** @todo Add protection in case none of the received workspaces is in the registeredWorkspaces map */
+
   if (machine.executeOnce)
   {
     M5Dial.Display.clear();
@@ -86,12 +183,12 @@ void stateTimeEntrySelection()
     M5Dial.Display.clear();
     oldPosition = newPosition;
     Serial.println(newPosition);
-    M5Dial.Display.drawString(favouriteTasks[((newPosition % numOfTasks) + numOfTasks) % numOfTasks].getDescription().c_str(),
+
+    M5Dial.Display.drawString(selectedTasks[((newPosition % numOfTasks) + numOfTasks) % numOfTasks].getDescription().c_str(),
                               M5Dial.Display.width() / 2,
                               M5Dial.Display.height() / 2);
   }
 
-  TimeEntry newTimeEntry;
   if (M5Dial.BtnA.wasPressed())
   {
     String currentTime = "No time";
@@ -104,7 +201,7 @@ void stateTimeEntrySelection()
     if ((WiFi.status() == WL_CONNECTED))
     {
       int index = ((newPosition % numOfTasks) + numOfTasks) % numOfTasks;
-      if(index==0)
+      if (index == 0)
       {
         M5Dial.Display.clear();
         M5Dial.Display.drawString("Change workspace",
@@ -115,14 +212,16 @@ void stateTimeEntrySelection()
       }
       else if (index == 1)
       {
+        TimeEntry currentTimeEntry;
         M5Dial.Display.clear();
         M5Dial.Display.drawString("Stopping",
                                   M5Dial.Display.width() / 2,
                                   M5Dial.Display.height() / 2);
         Serial.println("---- Getting current entry");
-        toggl.GetCurrentTimeEntry(&newTimeEntry);
-        if (newTimeEntry.getId() == 0)
+        toggl.GetCurrentTimeEntry(&currentTimeEntry);
+        if (currentTimeEntry.getId() == 0)
         {
+          /* There is no entry currently running */
           M5Dial.Display.clear();
           M5Dial.Display.drawString("Nothing to stop",
                                     M5Dial.Display.width() / 2,
@@ -131,21 +230,34 @@ void stateTimeEntrySelection()
         else
         {
           Serial.println("---- Stopping current entry");
-          String httpCode = "";
-          httpCode = toggl.StopTimeEntry(newTimeEntry);
-          Serial.println(httpCode.c_str());
-          Serial.println("Stopped time entry ID:");
-          Serial.println(newTimeEntry.getId());
-          M5Dial.Display.clear();
-          std::string msg = "Stopped\r\n" + newTimeEntry.getDescription();
-          M5Dial.Display.drawString(msg.c_str(),
-                                    M5Dial.Display.width() / 2,
-                                    M5Dial.Display.height() / 2);
-          M5Dial.Encoder.readAndReset();
+          togglApiErrorCode_t errorCode = TOGGL_API_EC_OK;
+          errorCode = toggl.StopTimeEntry(currentTimeEntry);
+          if (errorCode != TOGGL_API_EC_OK)
+          {
+            M5Dial.Display.clear();
+            M5Dial.Display.drawString("Error stopping",
+                                      M5Dial.Display.width() / 2,
+                                      M5Dial.Display.height() / 2);
+            delay(1000);
+            nextState = S1;
+          }
+          else
+          {
+            Serial.println("Stopped time entry ID:");
+            Serial.println(currentTimeEntry.getId());
+            M5Dial.Display.clear();
+            std::string msg = "Stopped\r\n" + currentTimeEntry.getDescription();
+            M5Dial.Display.drawString(msg.c_str(),
+                                      M5Dial.Display.width() / 2,
+                                      M5Dial.Display.height() / 2);
+            M5Dial.Encoder.readAndReset();
+          }
         }
       }
       else
       {
+        TimeEntry newTimeEntry;
+        /* Lets create a new time entry */
         String currentTime = timeManager.getCurrentTime("UTC");
         if (currentTime.length() > 1)
         {
@@ -159,7 +271,13 @@ void stateTimeEntrySelection()
           Serial.println("---- Creating a new entry");
 
           String tags = "";
-          String timeID = toggl.CreateTimeEntry(favouriteTasks[index].getDescription().c_str(), tags, -1, currentTime.c_str(), favouriteTasks[index].getProjectId(), "TheToggler_dial", workspaceID, &newTimeEntry);
+
+          Serial.println("Description: " + String(selectedTasks[index].getDescription().c_str()));
+          Serial.println("Project ID: " + String(selectedTasks[index].getProjectId()));
+          Serial.println("Workspace ID: " + String(registeredWorkspaces[registeredWorkspaceIndex].workspaceId));
+
+          String timeID = toggl.CreateTimeEntry(selectedTasks[index].getDescription().c_str(), tags, -1, currentTime.c_str(), selectedTasks[index].getProjectId(), "TheToggler_dial",
+                                                registeredWorkspaces[registeredWorkspaceIndex].workspaceId, &newTimeEntry);
           Serial.println(timeID.c_str());
           Serial.println("New time entry ID:");
           Serial.println(newTimeEntry.getId());
@@ -181,10 +299,9 @@ void stateTimeEntrySelection()
   }
 }
 
-
 /**
  * @brief Try to connect to the main WiFi network. If it fails, try to connect to the fallback network.
- * 
+ *
  * @return bool Wifi connection status
  */
 bool wifiConnect()
@@ -244,6 +361,8 @@ void setup()
   wifiConnect();
 
   toggl.setAuth(Token);
+
+  setupTasksMap();
 }
 
 void loop()
