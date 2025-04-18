@@ -76,35 +76,53 @@ int registeredWorkspaceIndex = -1;
  */
 void stateWorkplaceSelection()
 {
-
+  togglApiErrorCode_t errorCode = TOGGL_API_EC_OK;
   if (machine.executeOnce)
   {
+    /* This will be executed only when entering the state */
     if ((WiFi.status() != WL_CONNECTED))
     {
       wifiConnect();
     }
 
-    M5Dial.Display.clear();
-    M5Dial.Display.drawString("Select workplace",
-                              M5Dial.Display.width() / 2,
-                              M5Dial.Display.height() / 2);
     if (WiFi.status() == WL_CONNECTED)
     {
-      toggl.getWorkSpaces(workspaces, MAX_NUM_WORKSPACES, &receivedWorkspaces);
-    }
+      errorCode = toggl.getWorkSpaces(workspaces, MAX_NUM_WORKSPACES, &receivedWorkspaces);
 
-    if (receivedWorkspaces == 0)
-    {
-      M5Dial.Display.clear();
-      M5Dial.Display.drawString("No workspaces",
-                                M5Dial.Display.width() / 2,
-                                M5Dial.Display.height() / 2);
+      if (errorCode != TOGGL_API_EC_OK)
+      {
+        M5Dial.Display.clear();
+        M5Dial.Display.drawString("Error getting workspaces",
+                                  M5Dial.Display.width() / 2,
+                                  M5Dial.Display.height() / 2);
+        delay(1000);
+        nextState = S0;
+      }
+      else
+      {
+        if (receivedWorkspaces == 0)
+        {
+          M5Dial.Display.clear();
+          M5Dial.Display.drawString("No workspaces",
+                                    M5Dial.Display.width() / 2,
+                                    M5Dial.Display.height() / 2);
+        }
+        else
+        {
+          M5Dial.Display.clear();
+          M5Dial.Display.drawString("Select workplace",
+                                    M5Dial.Display.width() / 2,
+                                    M5Dial.Display.height() / 2);
+        }
+      }
     }
   }
 
+  /* This will be executed cyclically while in this state */
   if (receivedWorkspaces > 0)
   {
     long newPosition = M5Dial.Encoder.read();
+
     if (newPosition != oldPosition)
     {
       M5Dial.Speaker.tone(8000, 20);
@@ -124,9 +142,9 @@ void stateWorkplaceSelection()
                                 M5Dial.Display.width() / 2,
                                 M5Dial.Display.height() / 2);
       /* Lets find the tasks for the selected workspace */
-      for(int i=0; i<MAX_NUM_WORKSPACES; i++)
+      for (int i = 0; i < MAX_NUM_WORKSPACES; i++)
       {
-        if(registeredWorkspaces[i].workspaceId == workspaces[((newPosition % receivedWorkspaces) + receivedWorkspaces) % receivedWorkspaces].getId())
+        if (registeredWorkspaces[i].workspaceId == workspaces[((newPosition % receivedWorkspaces) + receivedWorkspaces) % receivedWorkspaces].getId())
         {
           registeredWorkspaceIndex = i;
           Serial.println("Using registered workspace: " + String(registeredWorkspaces[i].workspaceId));
@@ -147,7 +165,7 @@ void stateTimeEntrySelection()
 {
   int numOfTasks = registeredWorkspaces[registeredWorkspaceIndex].numOfTasks;
   Task *selectedTasks = registeredWorkspaces[registeredWorkspaceIndex].tasks;
-  /* TODO Add protection in case none of the received workspaces is in the registeredWorkspaces map */
+  /** @todo Add protection in case none of the received workspaces is in the registeredWorkspaces map */
 
   if (machine.executeOnce)
   {
@@ -170,7 +188,7 @@ void stateTimeEntrySelection()
                               M5Dial.Display.height() / 2);
   }
 
-  TimeEntry newTimeEntry;
+
   if (M5Dial.BtnA.wasPressed())
   {
     String currentTime = "No time";
@@ -194,14 +212,16 @@ void stateTimeEntrySelection()
       }
       else if (index == 1)
       {
+        TimeEntry currentTimeEntry;
         M5Dial.Display.clear();
         M5Dial.Display.drawString("Stopping",
                                   M5Dial.Display.width() / 2,
                                   M5Dial.Display.height() / 2);
         Serial.println("---- Getting current entry");
-        toggl.GetCurrentTimeEntry(&newTimeEntry);
-        if (newTimeEntry.getId() == 0)
+        toggl.GetCurrentTimeEntry(&currentTimeEntry);
+        if (currentTimeEntry.getId() == 0)
         {
+          /* There is no entry currently running */
           M5Dial.Display.clear();
           M5Dial.Display.drawString("Nothing to stop",
                                     M5Dial.Display.width() / 2,
@@ -210,21 +230,34 @@ void stateTimeEntrySelection()
         else
         {
           Serial.println("---- Stopping current entry");
-          String httpCode = "";
-          httpCode = toggl.StopTimeEntry(newTimeEntry);
-          Serial.println(httpCode.c_str());
-          Serial.println("Stopped time entry ID:");
-          Serial.println(newTimeEntry.getId());
-          M5Dial.Display.clear();
-          std::string msg = "Stopped\r\n" + newTimeEntry.getDescription();
-          M5Dial.Display.drawString(msg.c_str(),
-                                    M5Dial.Display.width() / 2,
-                                    M5Dial.Display.height() / 2);
-          M5Dial.Encoder.readAndReset();
+          togglApiErrorCode_t errorCode = TOGGL_API_EC_OK;
+          errorCode = toggl.StopTimeEntry(currentTimeEntry);
+          if(errorCode != TOGGL_API_EC_OK)
+          {
+            M5Dial.Display.clear();
+            M5Dial.Display.drawString("Error stopping",
+                                      M5Dial.Display.width() / 2,
+                                      M5Dial.Display.height() / 2);
+            delay(1000);
+            nextState = S1;
+          }
+          else
+          {
+            Serial.println("Stopped time entry ID:");
+            Serial.println(currentTimeEntry.getId());
+            M5Dial.Display.clear();
+            std::string msg = "Stopped\r\n" + currentTimeEntry.getDescription();
+            M5Dial.Display.drawString(msg.c_str(),
+                                      M5Dial.Display.width() / 2,
+                                      M5Dial.Display.height() / 2);
+            M5Dial.Encoder.readAndReset();
+          }
+
         }
       }
       else
       {
+        TimeEntry newTimeEntry;
         /* Lets create a new time entry */
         String currentTime = timeManager.getCurrentTime("UTC");
         if (currentTime.length() > 1)
@@ -244,8 +277,8 @@ void stateTimeEntrySelection()
           Serial.println("Project ID: " + String(selectedTasks[index].getProjectId()));
           Serial.println("Workspace ID: " + String(registeredWorkspaces[registeredWorkspaceIndex].workspaceId));
 
-          String timeID = toggl.CreateTimeEntry(selectedTasks[index].getDescription().c_str(), tags, -1, currentTime.c_str(), selectedTasks[index].getProjectId(), "TheToggler_dial", 
-          registeredWorkspaces[registeredWorkspaceIndex].workspaceId, &newTimeEntry);
+          String timeID = toggl.CreateTimeEntry(selectedTasks[index].getDescription().c_str(), tags, -1, currentTime.c_str(), selectedTasks[index].getProjectId(), "TheToggler_dial",
+                                                registeredWorkspaces[registeredWorkspaceIndex].workspaceId, &newTimeEntry);
           Serial.println(timeID.c_str());
           Serial.println("New time entry ID:");
           Serial.println(newTimeEntry.getId());
