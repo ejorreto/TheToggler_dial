@@ -92,9 +92,10 @@ void stateWorkplaceSelection()
       if (errorCode != TOGGL_API_EC_OK)
       {
         M5Dial.Display.clear();
-        M5Dial.Display.drawString("Error getting workspaces",
+        M5Dial.Display.drawString("Error " + String(errorCode),
                                   M5Dial.Display.width() / 2,
                                   M5Dial.Display.height() / 2);
+        /** @todo Display a more comprehensive error in the screen */
         delay(1000);
         nextState = S0;
       }
@@ -188,7 +189,6 @@ void stateTimeEntrySelection()
                               M5Dial.Display.height() / 2);
   }
 
-
   if (M5Dial.BtnA.wasPressed())
   {
     String currentTime = "No time";
@@ -232,7 +232,7 @@ void stateTimeEntrySelection()
           Serial.println("---- Stopping current entry");
           togglApiErrorCode_t errorCode = TOGGL_API_EC_OK;
           errorCode = toggl.StopTimeEntry(currentTimeEntry);
-          if(errorCode != TOGGL_API_EC_OK)
+          if (errorCode != TOGGL_API_EC_OK)
           {
             M5Dial.Display.clear();
             M5Dial.Display.drawString("Error stopping",
@@ -252,7 +252,6 @@ void stateTimeEntrySelection()
                                       M5Dial.Display.height() / 2);
             M5Dial.Encoder.readAndReset();
           }
-
         }
       }
       else
