@@ -218,12 +218,20 @@ void stateTimeEntrySelection()
                                   M5Dial.Display.width() / 2,
                                   M5Dial.Display.height() / 2);
         Serial.println("---- Getting current entry");
-        toggl.GetCurrentTimeEntry(&currentTimeEntry);
-        if (currentTimeEntry.getId() == 0)
+        togglApiErrorCode_t errorCode = toggl.GetCurrentTimeEntry(&currentTimeEntry);
+        if(errorCode == TOGGL_API_EC_NO_CURRENT_TIME_ENTRY)
+        {
+          Serial.println("No current time entry");
+          M5Dial.Display.clear();
+          M5Dial.Display.drawString("No current entry",
+                                    M5Dial.Display.width() / 2,
+                                    M5Dial.Display.height() / 2);
+          delay(1000);
+        } else if (errorCode != TOGGL_API_EC_OK)
         {
           /* There is no entry currently running */
           M5Dial.Display.clear();
-          M5Dial.Display.drawString("Nothing to stop",
+          M5Dial.Display.drawString("Error get: " + String(errorCode),
                                     M5Dial.Display.width() / 2,
                                     M5Dial.Display.height() / 2);
         }
@@ -235,7 +243,7 @@ void stateTimeEntrySelection()
           if (errorCode != TOGGL_API_EC_OK)
           {
             M5Dial.Display.clear();
-            M5Dial.Display.drawString("Error stopping",
+            M5Dial.Display.drawString("Error stop:" + String(errorCode),
                                       M5Dial.Display.width() / 2,
                                       M5Dial.Display.height() / 2);
             delay(1000);
