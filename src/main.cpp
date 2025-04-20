@@ -7,6 +7,7 @@
 #include "timeManager.h"
 
 #include "StateMachine.h"
+#include <ArduinoJson.h>
 
 #define MAX_NUM_WORKSPACES 10
 
@@ -54,7 +55,7 @@ void setupTasksMap()
 /* Functions declaration */
 
 // WiFi connection
-bool wifiConnect();
+bool wifiConnectJSON();
 
 // State machine functions
 void stateWorkplaceSelection();
@@ -82,7 +83,7 @@ void stateWorkplaceSelection()
     /* This will be executed only when entering the state */
     if ((WiFi.status() != WL_CONNECTED))
     {
-      wifiConnect();
+      wifiConnectJSON();
     }
 
     if (WiFi.status() == WL_CONNECTED)
@@ -196,7 +197,7 @@ void stateTimeEntrySelection()
 
     if ((WiFi.status() != WL_CONNECTED))
     {
-      wifiConnect();
+      wifiConnectJSON();
     }
 
     if ((WiFi.status() == WL_CONNECTED))
@@ -220,7 +221,7 @@ void stateTimeEntrySelection()
                                   M5Dial.Display.height() / 2);
         Serial.println("---- Getting current entry");
         togglApiErrorCode_t errorCode = toggl.GetCurrentTimeEntry(&currentTimeEntry);
-        if(errorCode == TOGGL_API_EC_NO_CURRENT_TIME_ENTRY)
+        if (errorCode == TOGGL_API_EC_NO_CURRENT_TIME_ENTRY)
         {
           Serial.println("No current time entry");
           M5Dial.Display.clear();
@@ -228,7 +229,8 @@ void stateTimeEntrySelection()
                                     M5Dial.Display.width() / 2,
                                     M5Dial.Display.height() / 2);
           delay(1000);
-        } else if (errorCode != TOGGL_API_EC_OK)
+        }
+        else if (errorCode != TOGGL_API_EC_OK)
         {
           /* There is no entry currently running */
           M5Dial.Display.clear();
@@ -286,7 +288,7 @@ void stateTimeEntrySelection()
           Serial.println("Workspace ID: " + String(registeredWorkspaces[registeredWorkspaceIndex].workspaceId));
 
           togglApiErrorCode_t errorCode = toggl.CreateTimeEntry(selectedTasks[index].getDescription().c_str(), tags, -1, currentTime.c_str(), selectedTasks[index].getProjectId(), "TheToggler_dial",
-                                                registeredWorkspaces[registeredWorkspaceIndex].workspaceId, &newTimeEntry);
+                                                                registeredWorkspaces[registeredWorkspaceIndex].workspaceId, &newTimeEntry);
           if (errorCode == TOGGL_API_EC_OK)
           {
             M5Dial.Display.clear();
@@ -302,7 +304,6 @@ void stateTimeEntrySelection()
                                       M5Dial.Display.width() / 2,
                                       M5Dial.Display.height() / 2);
           }
-
         }
         else
         {
@@ -317,48 +318,73 @@ void stateTimeEntrySelection()
 }
 
 /**
- * @brief Try to connect to the main WiFi network. If it fails, try to connect to the fallback network.
+ * @brief Connect to wifi using the credentials in the JSON configuration string. It will retry a number of times on each wifi until connected.
  *
- * @return bool Wifi connection status
+ * @return true if connected
+ * @return false if not connected
  */
-bool wifiConnect()
+
+bool wifiConnectJSON()
 {
   int numRetries = 5;
   M5Dial.Display.clear();
   M5Dial.Display.drawString("Connecting",
                             M5Dial.Display.width() / 2,
                             M5Dial.Display.height() / 2);
-  while (WiFi.status() != WL_CONNECTED && numRetries > 0)
+  JsonDocument doc;
+  DeserializationError jsonErrorCode = deserializeJson(doc, settingsJson);
+  if (jsonErrorCode != DeserializationError::Ok)
   {
-    WiFi.begin(mainWifiSSID, mainWifiPass);
-    delay(1000);
-    numRetries--;
-  }
-  if (WiFi.status() != WL_CONNECTED)
-  {
-    numRetries = 5;
-    while (WiFi.status() != WL_CONNECTED && numRetries > 0)
-    {
-      WiFi.begin(fallbackWifiSSID, fallbackWifiPass);
-      delay(1000);
-      numRetries--;
-    }
-  }
-
-  if (WiFi.status() == WL_CONNECTED)
-  {
-    M5Dial.Display.clear();
-    M5Dial.Display.drawString("Wifi ON",
-                              M5Dial.Display.width() / 2,
-                              M5Dial.Display.height() / 2);
+    doc.clear();
+    Serial.println("Error deserializing JSON: " + String(jsonErrorCode.c_str()));
   }
   else
   {
-    M5Dial.Display.clear();
-    M5Dial.Display.drawString("Wifi OFF",
-                              M5Dial.Display.width() / 2,
-                              M5Dial.Display.height() / 2);
+    // serializeJsonPretty(doc, Serial); // for debugging
+    JsonArray data = doc["thetoggler"]["network"].as<JsonArray>();
+    Serial.println("Number of wifi networks configured: " + String(data.size()));
+    if (data.size() == 0)
+    {
+      doc.clear();
+      M5Dial.Display.clear();
+      M5Dial.Display.drawString("No wifi settings",
+                                M5Dial.Display.width() / 2,
+                                M5Dial.Display.height() / 2);
+      delay(1000);
+    }
+    else
+    {
+      for (JsonVariant item : data)
+      {
+        numRetries = 5;
+
+        while (WiFi.status() != WL_CONNECTED && numRetries > 0)
+        {
+          Serial.println("Trying wifi: " + String(item["ssid"].as<String>().c_str()));
+          WiFi.begin(item["ssid"].as<String>().c_str(), item["password"].as<String>().c_str());
+          delay(2000);
+          numRetries--;
+        }
+      }
+      doc.clear();
+    }
+
+    if (WiFi.status() == WL_CONNECTED)
+    {
+      M5Dial.Display.clear();
+      M5Dial.Display.drawString("Wifi ON",
+                                M5Dial.Display.width() / 2,
+                                M5Dial.Display.height() / 2);
+    }
+    else
+    {
+      M5Dial.Display.clear();
+      M5Dial.Display.drawString("Wifi OFF",
+                                M5Dial.Display.width() / 2,
+                                M5Dial.Display.height() / 2);
+    }
   }
+
   delay(1000);
   return WiFi.status() == WL_CONNECTED;
 }
@@ -375,7 +401,7 @@ void setup()
   M5Dial.Display.setTextSize(0.75);
 
   delay(1000);
-  wifiConnect();
+  wifiConnectJSON();
 
   toggl.setAuth(Token);
 
