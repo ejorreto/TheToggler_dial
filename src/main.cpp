@@ -191,6 +191,7 @@ void stateTimeEntrySelection()
 
   if (M5Dial.BtnA.wasPressed())
   {
+    M5Dial.Speaker.tone(6000, 20);
     String currentTime = "No time";
 
     if ((WiFi.status() != WL_CONNECTED))
@@ -284,16 +285,24 @@ void stateTimeEntrySelection()
           Serial.println("Project ID: " + String(selectedTasks[index].getProjectId()));
           Serial.println("Workspace ID: " + String(registeredWorkspaces[registeredWorkspaceIndex].workspaceId));
 
-          String timeID = toggl.CreateTimeEntry(selectedTasks[index].getDescription().c_str(), tags, -1, currentTime.c_str(), selectedTasks[index].getProjectId(), "TheToggler_dial",
+          togglApiErrorCode_t errorCode = toggl.CreateTimeEntry(selectedTasks[index].getDescription().c_str(), tags, -1, currentTime.c_str(), selectedTasks[index].getProjectId(), "TheToggler_dial",
                                                 registeredWorkspaces[registeredWorkspaceIndex].workspaceId, &newTimeEntry);
-          Serial.println(timeID.c_str());
-          Serial.println("New time entry ID:");
-          Serial.println(newTimeEntry.getId());
-          M5Dial.Display.clear();
-          M5Dial.Speaker.tone(6000, 20);
-          M5Dial.Display.drawString(newTimeEntry.getDescription().c_str(),
-                                    M5Dial.Display.width() / 2,
-                                    M5Dial.Display.height() / 2);
+          if (errorCode == TOGGL_API_EC_OK)
+          {
+            M5Dial.Display.clear();
+            M5Dial.Speaker.tone(6000, 20);
+            M5Dial.Display.drawString(newTimeEntry.getDescription().c_str(),
+                                      M5Dial.Display.width() / 2,
+                                      M5Dial.Display.height() / 2);
+          }
+          else
+          {
+            M5Dial.Display.clear();
+            M5Dial.Display.drawString("Error create: " + String(errorCode),
+                                      M5Dial.Display.width() / 2,
+                                      M5Dial.Display.height() / 2);
+          }
+
         }
         else
         {

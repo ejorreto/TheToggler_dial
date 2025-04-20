@@ -9,7 +9,7 @@ TimeManager::TimeManager()
 
 const String TimeManager::getCurrentTime(const String Timezone)
 {
-
+  /** @todo improve error handling */
   int16_t HTTP_Code{};
   String Output{};
   HTTPClient http;
