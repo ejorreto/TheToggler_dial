@@ -12,21 +12,12 @@
 #define MAX_NUM_WORKSPACES 10
 #define MAX_ENTRIES_PER_WORKSPACE 20
 
-typedef struct workspaceAndTasks
-{
-  int workspaceId;
-  Task *tasks;
-  uint8_t numOfTasks;
-} workspaceAndTasks;
-
 typedef struct workspaceEntries_t
 {
   int workspaceId;
   Task entries[MAX_ENTRIES_PER_WORKSPACE];
   uint8_t numOfEntries;
 } workspaceEntries_t;
-
-workspaceAndTasks registeredWorkspaces[MAX_NUM_WORKSPACES] = {0};
 
 workspaceEntries_t workspaceEntries[MAX_NUM_WORKSPACES];
 uint8_t numWorkspacesConfigured = 0;
@@ -37,31 +28,6 @@ StateMachine machine = StateMachine();
 Toggl toggl;
 TimeManager timeManager;
 long oldPosition = -999;
-
-Task workTasks[] = {
-    Task(0, "Change workspace", 0),
-    Task(1, "Stop tracking", 0),
-    Task(2, "Reu I", projectOneId),
-    Task(3, "Reu D", projectTwoId),
-    Task(4, "General", projectTwoId),
-    Task(5, "Task 4", projectTwoId),
-    Task(6, "Task 5", projectTwoId)};
-
-Task personalTasks[] = {
-    Task(0, "Change workspace", 0),
-    Task(1, "Stop tracking", 0),
-    Task(2, "Design", projectThreeId),
-    Task(3, "Implementation", projectThreeId)};
-
-void setupTasksMap()
-{
-  registeredWorkspaces[0].workspaceId = workspaceWorkId;
-  registeredWorkspaces[0].tasks = workTasks;
-  registeredWorkspaces[0].numOfTasks = sizeof(workTasks) / sizeof(workTasks[0]);
-  registeredWorkspaces[1].workspaceId = workspacePersonalId;
-  registeredWorkspaces[1].tasks = personalTasks;
-  registeredWorkspaces[1].numOfTasks = sizeof(personalTasks) / sizeof(personalTasks[0]);
-}
 
 /* Functions declaration */
 
@@ -81,8 +47,8 @@ State *S1 = machine.addState(&stateTimeEntrySelection);
 State *nextState = nullptr;
 
 /* Workspaces */
-Workspace workspaces[MAX_NUM_WORKSPACES];
-uint32_t receivedWorkspaces = 0;
+Workspace receivedWorkspaces[MAX_NUM_WORKSPACES];
+uint32_t numReceivedWorkspaces = 0;
 int registeredWorkspaceIndex = -1;
 
 /**
@@ -102,7 +68,7 @@ void stateWorkplaceSelection()
 
     if (WiFi.status() == WL_CONNECTED)
     {
-      errorCode = toggl.getWorkSpaces(workspaces, MAX_NUM_WORKSPACES, &receivedWorkspaces);
+      errorCode = toggl.getWorkSpaces(receivedWorkspaces, MAX_NUM_WORKSPACES, &numReceivedWorkspaces);
 
       if (errorCode != TOGGL_API_EC_OK)
       {
@@ -116,7 +82,7 @@ void stateWorkplaceSelection()
       }
       else
       {
-        if (receivedWorkspaces == 0)
+        if (numReceivedWorkspaces == 0)
         {
           M5Dial.Display.clear();
           M5Dial.Display.drawString("No workspaces",
@@ -135,7 +101,7 @@ void stateWorkplaceSelection()
   }
 
   /* This will be executed cyclically while in this state */
-  if (receivedWorkspaces > 0)
+  if (numReceivedWorkspaces > 0)
   {
     long newPosition = M5Dial.Encoder.read();
 
@@ -145,7 +111,7 @@ void stateWorkplaceSelection()
       M5Dial.Display.clear();
       oldPosition = newPosition;
       Serial.println(newPosition);
-      M5Dial.Display.drawString(workspaces[((newPosition % receivedWorkspaces) + receivedWorkspaces) % receivedWorkspaces].getName().c_str(),
+      M5Dial.Display.drawString(receivedWorkspaces[((newPosition % numReceivedWorkspaces) + numReceivedWorkspaces) % numReceivedWorkspaces].getName().c_str(),
                                 M5Dial.Display.width() / 2,
                                 M5Dial.Display.height() / 2);
     }
@@ -160,10 +126,10 @@ void stateWorkplaceSelection()
       /* Lets find the tasks for the selected workspace */
       for (int i = 0; i < MAX_NUM_WORKSPACES; i++)
       {
-        if (registeredWorkspaces[i].workspaceId == workspaces[((newPosition % receivedWorkspaces) + receivedWorkspaces) % receivedWorkspaces].getId())
+        if (workspaceEntries[i].workspaceId == receivedWorkspaces[((newPosition % numReceivedWorkspaces) + numReceivedWorkspaces) % numReceivedWorkspaces].getId())
         {
           registeredWorkspaceIndex = i;
-          Serial.println("Using registered workspace: " + String(registeredWorkspaces[i].workspaceId));
+          Serial.println("Using registered workspaceEntries: " + String(workspaceEntries[i].workspaceId));
           break;
         }
       }
@@ -179,14 +145,14 @@ void stateWorkplaceSelection()
  */
 void stateTimeEntrySelection()
 {
-  int numOfTasks = registeredWorkspaces[registeredWorkspaceIndex].numOfTasks;
-  Task *selectedTasks = registeredWorkspaces[registeredWorkspaceIndex].tasks;
+  int numOfTasks = workspaceEntries[registeredWorkspaceIndex].numOfEntries;
+  Task *selectedTasks = workspaceEntries[registeredWorkspaceIndex].entries;
   /** @todo Add protection in case none of the received workspaces is in the registeredWorkspaces map */
 
   if (machine.executeOnce)
   {
     M5Dial.Display.clear();
-    M5Dial.Display.drawString("Select time entry",
+    M5Dial.Display.drawString(String(numOfTasks) + " time entries",
                               M5Dial.Display.width() / 2,
                               M5Dial.Display.height() / 2);
   }
@@ -299,10 +265,10 @@ void stateTimeEntrySelection()
 
           Serial.println("Description: " + String(selectedTasks[index].getDescription().c_str()));
           Serial.println("Project ID: " + String(selectedTasks[index].getProjectId()));
-          Serial.println("Workspace ID: " + String(registeredWorkspaces[registeredWorkspaceIndex].workspaceId));
+          Serial.println("Workspace ID: " + String(workspaceEntries[registeredWorkspaceIndex].workspaceId));
 
           togglApiErrorCode_t errorCode = toggl.CreateTimeEntry(selectedTasks[index].getDescription().c_str(), tags, -1, currentTime.c_str(), selectedTasks[index].getProjectId(), "TheToggler_dial",
-                                                                registeredWorkspaces[registeredWorkspaceIndex].workspaceId, &newTimeEntry);
+                                                                workspaceEntries[registeredWorkspaceIndex].workspaceId, &newTimeEntry);
           if (errorCode == TOGGL_API_EC_OK)
           {
             M5Dial.Display.clear();
@@ -489,8 +455,6 @@ void setup()
   wifiConnectJSON();
   readEntriesJSON();
   toggl.setAuth(Token);
-
-  setupTasksMap();
 }
 
 void loop()
