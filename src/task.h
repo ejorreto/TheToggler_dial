@@ -7,11 +7,11 @@ class Task {
 private:
     int id;
     std::string description;
-    bool completed;
     int projectId;
 
 public:
     // Constructor
+    Task();
     Task(int taskId, const std::string& desc, int projId);
 
     // Getters
@@ -21,6 +21,7 @@ public:
 
     // Setters
     void setDescription(const std::string& desc);
+    void setProjectId(int projId);
 
     // Utility methods
     std::string toString() const;

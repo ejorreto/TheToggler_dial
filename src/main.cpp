@@ -10,6 +10,7 @@
 #include <ArduinoJson.h>
 
 #define MAX_NUM_WORKSPACES 10
+#define MAX_ENTRIES_PER_WORKSPACE 20
 
 typedef struct workspaceAndTasks
 {
@@ -18,7 +19,17 @@ typedef struct workspaceAndTasks
   uint8_t numOfTasks;
 } workspaceAndTasks;
 
+typedef struct workspaceEntries_t
+{
+  int workspaceId;
+  Task entries[MAX_ENTRIES_PER_WORKSPACE];
+  uint8_t numOfEntries;
+} workspaceEntries_t;
+
 workspaceAndTasks registeredWorkspaces[MAX_NUM_WORKSPACES] = {0};
+
+workspaceEntries_t workspaceEntries[MAX_NUM_WORKSPACES];
+uint8_t numWorkspacesConfigured = 0;
 
 /* Global variables */
 const int STATE_DELAY = 1000;
@@ -56,6 +67,9 @@ void setupTasksMap()
 
 // WiFi connection
 bool wifiConnectJSON();
+
+// Workspaces and entries from JSON
+bool readEntriesJSON();
 
 // State machine functions
 void stateWorkplaceSelection();
@@ -389,6 +403,77 @@ bool wifiConnectJSON()
   return WiFi.status() == WL_CONNECTED;
 }
 
+bool readEntriesJSON()
+{
+  M5Dial.Display.clear();
+  M5Dial.Display.drawString("Reading entries",
+                            M5Dial.Display.width() / 2,
+                            M5Dial.Display.height() / 2);
+  JsonDocument doc;
+  DeserializationError jsonErrorCode = deserializeJson(doc, settingsJson);
+  if (jsonErrorCode != DeserializationError::Ok)
+  {
+    doc.clear();
+    Serial.println("Error deserializing JSON: " + String(jsonErrorCode.c_str()));
+  }
+  else
+  {
+    // serializeJsonPretty(doc, Serial); // for debugging
+    JsonArray configuredWorkspacesJSON = doc["thetoggler"]["workspaces"].as<JsonArray>();
+    Serial.println("Number of workspaces configured: " + String(configuredWorkspacesJSON.size()));
+    if (configuredWorkspacesJSON.size() == 0)
+    {
+      doc.clear();
+      M5Dial.Display.clear();
+      M5Dial.Display.drawString("No workspaces configured",
+                                M5Dial.Display.width() / 2,
+                                M5Dial.Display.height() / 2);
+      delay(1000);
+    }
+    else
+    {
+      if (configuredWorkspacesJSON.size() > MAX_NUM_WORKSPACES)
+      {
+        M5Dial.Display.clear();
+        M5Dial.Display.drawString("Too many workspaces",
+                                  M5Dial.Display.width() / 2,
+                                  M5Dial.Display.height() / 2);
+        delay(1000);
+      }
+      else
+      {
+        for (JsonVariant item : configuredWorkspacesJSON)
+        {
+          workspaceEntries[numWorkspacesConfigured].workspaceId = item["workspaceID"];
+          JsonArray entries = item["entries"].as<JsonArray>();
+          Serial.println("Number of entries in workspace " + String(item["workspaceID"].as<int>()) + ": " + String(entries.size()));
+          for (JsonVariant entry : entries)
+          {
+            if (workspaceEntries[numWorkspacesConfigured].numOfEntries < MAX_ENTRIES_PER_WORKSPACE)
+            {
+              workspaceEntries[numWorkspacesConfigured].entries[workspaceEntries[numWorkspacesConfigured].numOfEntries].setDescription(entry["description"]);
+              workspaceEntries[numWorkspacesConfigured].entries[workspaceEntries[numWorkspacesConfigured].numOfEntries].setProjectId(entry["projectID"]);
+              workspaceEntries[numWorkspacesConfigured].numOfEntries++;
+            }
+            else
+            {
+              Serial.println("Too many entries in workspace");
+            }
+            Serial.println("Entry description: " + String(workspaceEntries[numWorkspacesConfigured].entries[workspaceEntries[numWorkspacesConfigured].numOfEntries - 1].getDescription().c_str()));
+          }
+
+          numWorkspacesConfigured++;
+        }
+      }
+
+      doc.clear();
+    }
+  }
+
+  delay(1000);
+  return true;
+}
+
 void setup()
 {
   int numRetries = 5;
@@ -402,7 +487,7 @@ void setup()
 
   delay(1000);
   wifiConnectJSON();
-
+  readEntriesJSON();
   toggl.setAuth(Token);
 
   setupTasksMap();
