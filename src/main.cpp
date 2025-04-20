@@ -342,17 +342,27 @@ bool wifiConnectJSON()
     // serializeJsonPretty(doc, Serial); // for debugging
     JsonArray data = doc["thetoggler"]["network"].as<JsonArray>();
     Serial.println("Number of wifi networks configured: " + String(data.size()));
-
-    for (JsonVariant item : data)
+    if (data.size() == 0)
     {
-      numRetries = 5;
-
-      while (WiFi.status() != WL_CONNECTED && numRetries > 0)
+      M5Dial.Display.clear();
+      M5Dial.Display.drawString("No wifi settings",
+                                M5Dial.Display.width() / 2,
+                                M5Dial.Display.height() / 2);
+      delay(1000);
+    }
+    else
+    {
+      for (JsonVariant item : data)
       {
-        Serial.println("Trying wifi: " + String(item["ssid"].as<String>().c_str()));
-        WiFi.begin(item["ssid"].as<String>().c_str(), item["password"].as<String>().c_str());
-        delay(2000);
-        numRetries--;
+        numRetries = 5;
+
+        while (WiFi.status() != WL_CONNECTED && numRetries > 0)
+        {
+          Serial.println("Trying wifi: " + String(item["ssid"].as<String>().c_str()));
+          WiFi.begin(item["ssid"].as<String>().c_str(), item["password"].as<String>().c_str());
+          delay(2000);
+          numRetries--;
+        }
       }
     }
 
