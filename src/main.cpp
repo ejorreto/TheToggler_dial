@@ -335,6 +335,7 @@ bool wifiConnectJSON()
   DeserializationError jsonErrorCode = deserializeJson(doc, settingsJson);
   if (jsonErrorCode != DeserializationError::Ok)
   {
+    doc.clear();
     Serial.println("Error deserializing JSON: " + String(jsonErrorCode.c_str()));
   }
   else
@@ -344,6 +345,7 @@ bool wifiConnectJSON()
     Serial.println("Number of wifi networks configured: " + String(data.size()));
     if (data.size() == 0)
     {
+      doc.clear();
       M5Dial.Display.clear();
       M5Dial.Display.drawString("No wifi settings",
                                 M5Dial.Display.width() / 2,
@@ -364,6 +366,7 @@ bool wifiConnectJSON()
           numRetries--;
         }
       }
+      doc.clear();
     }
 
     if (WiFi.status() == WL_CONNECTED)
