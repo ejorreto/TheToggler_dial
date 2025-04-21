@@ -307,6 +307,7 @@ void stateTimeEntrySelection()
 bool wifiConnectJSON()
 {
   int numRetries = 5;
+  const int delayBetweenRetries = 1000;
   M5Dial.Display.clear();
   M5Dial.Display.drawString("Connecting",
                             M5Dial.Display.width() / 2,
@@ -341,8 +342,9 @@ bool wifiConnectJSON()
         while (WiFi.status() != WL_CONNECTED && numRetries > 0)
         {
           Serial.println("Trying wifi: " + String(item["ssid"].as<String>().c_str()));
-          WiFi.begin(item["ssid"].as<String>().c_str(), item["password"].as<String>().c_str());
-          delay(2000);
+          wl_status_t connectionStatus = WiFi.begin(item["ssid"].as<String>().c_str(), item["password"].as<String>().c_str());
+          Serial.println("Connection status: " + String(connectionStatus));
+          delay(delayBetweenRetries);
           numRetries--;
         }
       }
@@ -355,6 +357,10 @@ bool wifiConnectJSON()
       M5Dial.Display.drawString("Wifi ON",
                                 M5Dial.Display.width() / 2,
                                 M5Dial.Display.height() / 2);
+      M5Dial.Display.drawString(WiFi.SSID().c_str(),
+                                M5Dial.Display.width() / 2,
+                                M5Dial.Display.height() / 2 + 30);
+      Serial.println(WiFi.localIP());
     }
     else
     {
@@ -365,16 +371,16 @@ bool wifiConnectJSON()
     }
   }
 
-  delay(1000);
+  delay(3000);
   return WiFi.status() == WL_CONNECTED;
 }
 
 bool readEntriesJSON()
 {
-  M5Dial.Display.clear();
-  M5Dial.Display.drawString("Reading entries",
-                            M5Dial.Display.width() / 2,
-                            M5Dial.Display.height() / 2);
+  // M5Dial.Display.clear();
+  // M5Dial.Display.drawString("Reading entries",
+  //                           M5Dial.Display.width() / 2,
+  //                           M5Dial.Display.height() / 2);
   JsonDocument doc;
   DeserializationError jsonErrorCode = deserializeJson(doc, settingsJson);
   if (jsonErrorCode != DeserializationError::Ok)
@@ -394,7 +400,6 @@ bool readEntriesJSON()
       M5Dial.Display.drawString("No workspaces configured",
                                 M5Dial.Display.width() / 2,
                                 M5Dial.Display.height() / 2);
-      delay(1000);
     }
     else
     {
@@ -436,13 +441,11 @@ bool readEntriesJSON()
     }
   }
 
-  delay(1000);
   return true;
 }
 
 void setup()
 {
-  int numRetries = 5;
   Serial.begin(115200);
   auto cfg = M5.config();
   M5Dial.begin(cfg, true, false);
@@ -451,7 +454,6 @@ void setup()
   M5Dial.Display.setTextFont(&fonts::Orbitron_Light_32);
   M5Dial.Display.setTextSize(0.75);
 
-  delay(1000);
   wifiConnectJSON();
   readEntriesJSON();
   toggl.setAuth(Token);
