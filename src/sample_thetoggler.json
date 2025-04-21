@@ -1,16 +1,45 @@
 {
-  "thetoggler":
-  {
-    "network":
-    [
+  "thetoggler": {
+    "network": [
       {
         "ssid": "network1",
         "password": "password1"
-      }
-      ,
+      },
       {
         "ssid": "network2",
         "password": "password2"
+      }
+    ],
+    "workspaces": [
+      {
+        "workspaceID": "12345",
+        "entries": [
+          {
+            "description": "Design",
+            "projectID": 789456
+          },
+          {
+            "description": "Implementation",
+            "projectID": 456123
+          }
+        ]
+      },
+      {
+        "workspaceID": "654321",
+        "entries": [
+          {
+            "description": "General",
+            "projectID": 777888999
+          },
+          {
+            "description": "Meetings",
+            "projectID": 666555444
+          },
+          {
+            "description": "Paperwork",
+            "projectID": 32563256
+          }
+        ]
       }
     ]
   }
