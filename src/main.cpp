@@ -23,11 +23,15 @@ workspaceEntries_t workspaceEntries[MAX_NUM_WORKSPACES];
 uint8_t numWorkspacesConfigured = 0;
 
 /* Global variables */
-const int STATE_DELAY = 1000;
+const int STATE_DELAY = 0;
+const int SCREEN_OFF_DELAY = 10000;
 StateMachine machine = StateMachine();
 Toggl toggl;
 TimeManager timeManager;
 long oldPosition = -999;
+unsigned long lastTime = 0;
+unsigned long currentTime = 0;
+const int delayBetweenRetries = 5000;
 
 /* Functions declaration */
 
@@ -51,6 +55,20 @@ Workspace receivedWorkspaces[MAX_NUM_WORKSPACES];
 uint32_t numReceivedWorkspaces = 0;
 int registeredWorkspaceIndex = -1;
 
+/* Screen and power saving */
+bool enableScreenOff = false;
+void screenOff()
+{
+  // M5Dial.Display.powerSaveOn();
+  M5Dial.Display.setBrightness(0);
+}
+void screenOn()
+{
+  lastTime = currentTime;
+  // M5Dial.Display.powerSaveOff();
+  M5Dial.Display.setBrightness(255);
+}
+
 /**
  * @brief Workplace selection state function
  *
@@ -60,6 +78,7 @@ void stateWorkplaceSelection()
   togglApiErrorCode_t errorCode = TOGGL_API_EC_OK;
   if (machine.executeOnce)
   {
+    enableScreenOff = true;
     /* This will be executed only when entering the state */
     if ((WiFi.status() != WL_CONNECTED))
     {
@@ -107,6 +126,7 @@ void stateWorkplaceSelection()
 
     if (newPosition != oldPosition)
     {
+      screenOn();
       M5Dial.Speaker.tone(8000, 20);
       M5Dial.Display.clear();
       oldPosition = newPosition;
@@ -118,6 +138,7 @@ void stateWorkplaceSelection()
 
     if (M5Dial.BtnA.wasPressed())
     {
+      screenOn();
       Serial.println("---- Workplace selected");
       M5Dial.Display.clear();
       M5Dial.Display.drawString("Workplace selected",
@@ -160,6 +181,7 @@ void stateTimeEntrySelection()
   long newPosition = M5Dial.Encoder.read();
   if (newPosition != oldPosition)
   {
+    screenOn();
     M5Dial.Speaker.tone(8000, 20);
     M5Dial.Display.clear();
     oldPosition = newPosition;
@@ -172,6 +194,7 @@ void stateTimeEntrySelection()
 
   if (M5Dial.BtnA.wasPressed())
   {
+    screenOn();
     M5Dial.Speaker.tone(6000, 20);
     String currentTime = "No time";
 
@@ -307,7 +330,7 @@ void stateTimeEntrySelection()
 bool wifiConnectJSON()
 {
   int numRetries = 5;
-  const int delayBetweenRetries = 1000;
+
   M5Dial.Display.clear();
   M5Dial.Display.drawString("Connecting",
                             M5Dial.Display.width() / 2,
@@ -429,6 +452,7 @@ bool readEntriesJSON()
             else
             {
               Serial.println("Too many entries in workspace");
+              /** @todo give feedback of this in the display */
             }
             Serial.println("Entry description: " + String(workspaceEntries[numWorkspacesConfigured].entries[workspaceEntries[numWorkspacesConfigured].numOfEntries - 1].getDescription().c_str()));
           }
@@ -453,14 +477,32 @@ void setup()
   M5Dial.Display.setTextDatum(middle_center);
   M5Dial.Display.setTextFont(&fonts::Orbitron_Light_32);
   M5Dial.Display.setTextSize(0.75);
+  M5Dial.Display.setRotation(2);
 
   wifiConnectJSON();
   readEntriesJSON();
   toggl.setAuth(Token);
+
+  // static constexpr const char* const wd[7] = {"Sun", "Mon", "Tue", "Wed",
+  //   "Thr", "Fri", "Sat"};
+
+  // auto dt = M5Dial.Rtc.getDateTime();
+  // Serial.printf("RTC   UTC  :%04d/%02d/%02d (%s)  %02d:%02d:%02d\r\n",
+  //               dt.date.year, dt.date.month, dt.date.date,
+  //               wd[dt.date.weekDay], dt.time.hours, dt.time.minutes,
+  //               dt.time.seconds);
+  // M5Dial.Display.setCursor(0, 0);
+  // M5Dial.Display.printf("RTC   UTC  :%04d/%02d/%02d (%s)  %02d:%02d:%02d",
+  //                       dt.date.year, dt.date.month, dt.date.date,
+  //                       wd[dt.date.weekDay], dt.time.hours, dt.time.minutes,
+  //                       dt.time.seconds);
+  lastTime = millis();
+  currentTime = lastTime;
 }
 
 void loop()
 {
+  currentTime = millis();
   M5Dial.update();
   // The following way to transition to a new state is required as per https://github.com/jrullan/StateMachine/issues/13
   if (nextState)
@@ -469,4 +511,9 @@ void loop()
     nextState = nullptr;
   }
   machine.run();
+
+  if(enableScreenOff && (currentTime - lastTime > SCREEN_OFF_DELAY))
+  {
+    screenOff();
+  }
 }
