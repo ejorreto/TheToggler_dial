@@ -44,10 +44,12 @@ bool readEntriesJSON();
 // State machine functions
 void stateWorkplaceSelection();
 void stateTimeEntrySelection();
+void stateLowPower();
 
 /* State machine configuration */
 State *S0 = machine.addState(&stateWorkplaceSelection);
 State *S1 = machine.addState(&stateTimeEntrySelection);
+State *S2 = machine.addState(&stateLowPower);
 State *nextState = nullptr;
 
 /* Workspaces */
@@ -126,7 +128,7 @@ void stateWorkplaceSelection()
 
     if (newPosition != oldPosition)
     {
-      screenOn();
+      lastTime = currentTime;
       M5Dial.Speaker.tone(8000, 20);
       M5Dial.Display.clear();
       oldPosition = newPosition;
@@ -138,7 +140,7 @@ void stateWorkplaceSelection()
 
     if (M5Dial.BtnA.wasPressed())
     {
-      screenOn();
+      lastTime = currentTime;
       Serial.println("---- Workplace selected");
       M5Dial.Display.clear();
       M5Dial.Display.drawString("Workplace selected",
@@ -181,7 +183,7 @@ void stateTimeEntrySelection()
   long newPosition = M5Dial.Encoder.read();
   if (newPosition != oldPosition)
   {
-    screenOn();
+    lastTime = currentTime;
     M5Dial.Speaker.tone(8000, 20);
     M5Dial.Display.clear();
     oldPosition = newPosition;
@@ -190,11 +192,14 @@ void stateTimeEntrySelection()
     M5Dial.Display.drawString(selectedTasks[((newPosition % numOfTasks) + numOfTasks) % numOfTasks].getDescription().c_str(),
                               M5Dial.Display.width() / 2,
                               M5Dial.Display.height() / 2);
+    M5Dial.Display.drawString(String(selectedTasks[((newPosition % numOfTasks) + numOfTasks) % numOfTasks].getProjectId()).c_str(),
+                              M5Dial.Display.width() / 2,
+                              M5Dial.Display.height() / 2 + 30);
   }
 
   if (M5Dial.BtnA.wasPressed())
   {
-    screenOn();
+    lastTime = currentTime;
     M5Dial.Speaker.tone(6000, 20);
     String currentTime = "No time";
 
@@ -318,15 +323,36 @@ void stateTimeEntrySelection()
       }
     }
   }
+
+  /* Move to the low power state if the encoder or the button were not used in some time */
+  if (currentTime - lastTime > SCREEN_OFF_DELAY)
+  {
+    nextState = S2;
+  }
 }
 
+void stateLowPower()
+{
+  if (machine.executeOnce)
+  {
+    screenOff();
+  }
+
+  long newPosition = M5Dial.Encoder.read();
+
+  if (newPosition != oldPosition)
+  {
+    M5Dial.Speaker.tone(8000, 20);
+    screenOn();
+    nextState = S1;
+  }
+}
 /**
  * @brief Connect to wifi using the credentials in the JSON configuration string. It will retry a number of times on each wifi until connected.
  *
  * @return true if connected
  * @return false if not connected
  */
-
 bool wifiConnectJSON()
 {
   int numRetries = 5;
@@ -504,6 +530,7 @@ void loop()
 {
   currentTime = millis();
   M5Dial.update();
+
   // The following way to transition to a new state is required as per https://github.com/jrullan/StateMachine/issues/13
   if (nextState)
   {
@@ -511,9 +538,4 @@ void loop()
     nextState = nullptr;
   }
   machine.run();
-
-  if(enableScreenOff && (currentTime - lastTime > SCREEN_OFF_DELAY))
-  {
-    screenOff();
-  }
 }
