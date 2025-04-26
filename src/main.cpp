@@ -58,7 +58,6 @@ uint32_t numReceivedWorkspaces = 0;
 int registeredWorkspaceIndex = -1;
 
 /* Screen and power saving */
-bool enableScreenOff = false;
 void screenOff()
 {
   // M5Dial.Display.powerSaveOn();
@@ -80,7 +79,6 @@ void stateWorkplaceSelection()
   togglApiErrorCode_t errorCode = TOGGL_API_EC_OK;
   if (machine.executeOnce)
   {
-    enableScreenOff = true;
     /* This will be executed only when entering the state */
     if ((WiFi.status() != WL_CONNECTED))
     {
@@ -174,6 +172,7 @@ void stateTimeEntrySelection()
 
   if (machine.executeOnce)
   {
+    lastTime = currentTime; /* Reset the countdown */
     M5Dial.Display.clear();
     M5Dial.Display.drawString(String(numOfTasks) + " time entries",
                               M5Dial.Display.width() / 2,
@@ -201,7 +200,7 @@ void stateTimeEntrySelection()
   {
     lastTime = currentTime;
     M5Dial.Speaker.tone(6000, 20);
-    String currentTime = "No time";
+    String currentTimestamp = "No time";
 
     if ((WiFi.status() != WL_CONNECTED))
     {
@@ -277,14 +276,20 @@ void stateTimeEntrySelection()
       {
         TimeEntry newTimeEntry;
         /* Lets create a new time entry */
-        String currentTime = timeManager.getCurrentTime("UTC");
-        if (currentTime.length() > 1)
+        M5Dial.Speaker.tone(6000, 20);
+        M5Dial.Display.clear();
+        M5Dial.Display.drawString("Getting UTC",
+                                  M5Dial.Display.width() / 2,
+                                  M5Dial.Display.height() / 2);
+        String currentTimestamp = timeManager.getCurrentTime("UTC");
+        lastTime = currentTime; /* Avoid going to low power inmediately after getting the current time */
+        if (currentTimestamp.length() > 1)
         {
-          Serial.println(currentTime.c_str());
+          Serial.println(currentTimestamp.c_str());
 
           M5Dial.Display.clear();
           M5Dial.Speaker.tone(6000, 20);
-          M5Dial.Display.drawString(currentTime.c_str(),
+          M5Dial.Display.drawString(currentTimestamp.c_str(),
                                     M5Dial.Display.width() / 2,
                                     M5Dial.Display.height() / 2);
           Serial.println("---- Creating a new entry");
@@ -295,7 +300,7 @@ void stateTimeEntrySelection()
           Serial.println("Project ID: " + String(selectedTasks[index].getProjectId()));
           Serial.println("Workspace ID: " + String(workspaceEntries[registeredWorkspaceIndex].workspaceId));
 
-          togglApiErrorCode_t errorCode = toggl.CreateTimeEntry(selectedTasks[index].getDescription().c_str(), tags, -1, currentTime.c_str(), selectedTasks[index].getProjectId(), "TheToggler_dial",
+          togglApiErrorCode_t errorCode = toggl.CreateTimeEntry(selectedTasks[index].getDescription().c_str(), tags, -1, currentTimestamp.c_str(), selectedTasks[index].getProjectId(), "TheToggler_dial",
                                                                 workspaceEntries[registeredWorkspaceIndex].workspaceId, &newTimeEntry);
           if (errorCode == TOGGL_API_EC_OK)
           {
@@ -336,6 +341,7 @@ void stateLowPower()
   if (machine.executeOnce)
   {
     screenOff();
+    WiFi.disconnect();
   }
 
   long newPosition = M5Dial.Encoder.read();
@@ -357,10 +363,6 @@ bool wifiConnectJSON()
 {
   int numRetries = 5;
 
-  M5Dial.Display.clear();
-  M5Dial.Display.drawString("Connecting",
-                            M5Dial.Display.width() / 2,
-                            M5Dial.Display.height() / 2);
   JsonDocument doc;
   DeserializationError jsonErrorCode = deserializeJson(doc, settingsJson);
   if (jsonErrorCode != DeserializationError::Ok)
@@ -390,6 +392,13 @@ bool wifiConnectJSON()
 
         while (WiFi.status() != WL_CONNECTED && numRetries > 0)
         {
+          M5Dial.Display.clear();
+          M5Dial.Display.drawString("Connecting",
+                                    M5Dial.Display.width() / 2,
+                                    M5Dial.Display.height() / 2);
+          M5Dial.Display.drawString(String(item["ssid"].as<String>().c_str()),
+                                    M5Dial.Display.width() / 2,
+                                    M5Dial.Display.height() / 2 + 30 );
           Serial.println("Trying wifi: " + String(item["ssid"].as<String>().c_str()));
           wl_status_t connectionStatus = WiFi.begin(item["ssid"].as<String>().c_str(), item["password"].as<String>().c_str());
           Serial.println("Connection status: " + String(connectionStatus));
@@ -420,7 +429,8 @@ bool wifiConnectJSON()
     }
   }
 
-  delay(3000);
+  delay(1000);
+  lastTime = currentTime; /* Avoid going to low power inmediately after a wifi connection */
   return WiFi.status() == WL_CONNECTED;
 }
 
