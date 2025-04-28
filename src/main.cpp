@@ -5,6 +5,7 @@
 
 #include "credentials.h"
 #include "timeManager.h"
+#include "sleepyDog.h"
 
 #include "StateMachine.h"
 #include <ArduinoJson.h>
@@ -23,11 +24,15 @@ workspaceEntries_t workspaceEntries[MAX_NUM_WORKSPACES];
 uint8_t numWorkspacesConfigured = 0;
 
 /* Global variables */
-const int STATE_DELAY = 1000;
+const int STATE_DELAY = 0;
+SleepyDog sleepyDog(10000);
 StateMachine machine = StateMachine();
 Toggl toggl;
 TimeManager timeManager;
 long oldPosition = -999;
+unsigned long lastTime = 0;
+unsigned long currentTime = 0;
+const int delayBetweenRetries = 5000;
 
 /* Functions declaration */
 
@@ -40,16 +45,31 @@ bool readEntriesJSON();
 // State machine functions
 void stateWorkplaceSelection();
 void stateTimeEntrySelection();
+void stateLowPower();
 
 /* State machine configuration */
 State *S0 = machine.addState(&stateWorkplaceSelection);
 State *S1 = machine.addState(&stateTimeEntrySelection);
+State *S2 = machine.addState(&stateLowPower);
 State *nextState = nullptr;
 
 /* Workspaces */
 Workspace receivedWorkspaces[MAX_NUM_WORKSPACES];
 uint32_t numReceivedWorkspaces = 0;
 int registeredWorkspaceIndex = -1;
+
+/* Screen and power saving */
+void screenOff()
+{
+  // M5Dial.Display.powerSaveOn();
+  M5Dial.Display.setBrightness(0);
+}
+void screenOn()
+{
+  lastTime = currentTime;
+  // M5Dial.Display.powerSaveOff();
+  M5Dial.Display.setBrightness(255);
+}
 
 /**
  * @brief Workplace selection state function
@@ -107,6 +127,7 @@ void stateWorkplaceSelection()
 
     if (newPosition != oldPosition)
     {
+      lastTime = currentTime;
       M5Dial.Speaker.tone(8000, 20);
       M5Dial.Display.clear();
       oldPosition = newPosition;
@@ -118,6 +139,7 @@ void stateWorkplaceSelection()
 
     if (M5Dial.BtnA.wasPressed())
     {
+      lastTime = currentTime;
       Serial.println("---- Workplace selected");
       M5Dial.Display.clear();
       M5Dial.Display.drawString("Workplace selected",
@@ -151,6 +173,7 @@ void stateTimeEntrySelection()
 
   if (machine.executeOnce)
   {
+    sleepyDog.feed();
     M5Dial.Display.clear();
     M5Dial.Display.drawString(String(numOfTasks) + " time entries",
                               M5Dial.Display.width() / 2,
@@ -160,6 +183,7 @@ void stateTimeEntrySelection()
   long newPosition = M5Dial.Encoder.read();
   if (newPosition != oldPosition)
   {
+    sleepyDog.feed();
     M5Dial.Speaker.tone(8000, 20);
     M5Dial.Display.clear();
     oldPosition = newPosition;
@@ -168,12 +192,16 @@ void stateTimeEntrySelection()
     M5Dial.Display.drawString(selectedTasks[((newPosition % numOfTasks) + numOfTasks) % numOfTasks].getDescription().c_str(),
                               M5Dial.Display.width() / 2,
                               M5Dial.Display.height() / 2);
+    M5Dial.Display.drawString(String(selectedTasks[((newPosition % numOfTasks) + numOfTasks) % numOfTasks].getProjectId()).c_str(),
+                              M5Dial.Display.width() / 2,
+                              M5Dial.Display.height() / 2 + 30);
   }
 
   if (M5Dial.BtnA.wasPressed())
   {
+    sleepyDog.feed();
     M5Dial.Speaker.tone(6000, 20);
-    String currentTime = "No time";
+    String currentTimestamp = "No time";
 
     if ((WiFi.status() != WL_CONNECTED))
     {
@@ -249,14 +277,20 @@ void stateTimeEntrySelection()
       {
         TimeEntry newTimeEntry;
         /* Lets create a new time entry */
-        String currentTime = timeManager.getCurrentTime("UTC");
-        if (currentTime.length() > 1)
+        M5Dial.Speaker.tone(6000, 20);
+        M5Dial.Display.clear();
+        M5Dial.Display.drawString("Getting UTC",
+                                  M5Dial.Display.width() / 2,
+                                  M5Dial.Display.height() / 2);
+        String currentTimestamp = timeManager.getCurrentTime("UTC");
+        sleepyDog.feed(); /* Avoid going to low power inmediately after getting the current time */
+        if (currentTimestamp.length() > 1)
         {
-          Serial.println(currentTime.c_str());
+          Serial.println(currentTimestamp.c_str());
 
           M5Dial.Display.clear();
           M5Dial.Speaker.tone(6000, 20);
-          M5Dial.Display.drawString(currentTime.c_str(),
+          M5Dial.Display.drawString(currentTimestamp.c_str(),
                                     M5Dial.Display.width() / 2,
                                     M5Dial.Display.height() / 2);
           Serial.println("---- Creating a new entry");
@@ -267,7 +301,7 @@ void stateTimeEntrySelection()
           Serial.println("Project ID: " + String(selectedTasks[index].getProjectId()));
           Serial.println("Workspace ID: " + String(workspaceEntries[registeredWorkspaceIndex].workspaceId));
 
-          togglApiErrorCode_t errorCode = toggl.CreateTimeEntry(selectedTasks[index].getDescription().c_str(), tags, -1, currentTime.c_str(), selectedTasks[index].getProjectId(), "TheToggler_dial",
+          togglApiErrorCode_t errorCode = toggl.CreateTimeEntry(selectedTasks[index].getDescription().c_str(), tags, -1, currentTimestamp.c_str(), selectedTasks[index].getProjectId(), "TheToggler_dial",
                                                                 workspaceEntries[registeredWorkspaceIndex].workspaceId, &newTimeEntry);
           if (errorCode == TOGGL_API_EC_OK)
           {
@@ -295,23 +329,41 @@ void stateTimeEntrySelection()
       }
     }
   }
+
+  /* Move to the low power state if the encoder or the button were not used in some time */
+  if (sleepyDog.isSleeping())
+  {
+    nextState = S2;
+  }
 }
 
+void stateLowPower()
+{
+  if (machine.executeOnce)
+  {
+    screenOff();
+    WiFi.disconnect();
+  }
+
+  long newPosition = M5Dial.Encoder.read();
+
+  if (newPosition != oldPosition)
+  {
+    M5Dial.Speaker.tone(8000, 20);
+    screenOn();
+    nextState = S1;
+  }
+}
 /**
  * @brief Connect to wifi using the credentials in the JSON configuration string. It will retry a number of times on each wifi until connected.
  *
  * @return true if connected
  * @return false if not connected
  */
-
 bool wifiConnectJSON()
 {
   int numRetries = 5;
-  const int delayBetweenRetries = 1000;
-  M5Dial.Display.clear();
-  M5Dial.Display.drawString("Connecting",
-                            M5Dial.Display.width() / 2,
-                            M5Dial.Display.height() / 2);
+
   JsonDocument doc;
   DeserializationError jsonErrorCode = deserializeJson(doc, settingsJson);
   if (jsonErrorCode != DeserializationError::Ok)
@@ -341,6 +393,13 @@ bool wifiConnectJSON()
 
         while (WiFi.status() != WL_CONNECTED && numRetries > 0)
         {
+          M5Dial.Display.clear();
+          M5Dial.Display.drawString("Connecting",
+                                    M5Dial.Display.width() / 2,
+                                    M5Dial.Display.height() / 2);
+          M5Dial.Display.drawString(String(item["ssid"].as<String>().c_str()),
+                                    M5Dial.Display.width() / 2,
+                                    M5Dial.Display.height() / 2 + 30 );
           Serial.println("Trying wifi: " + String(item["ssid"].as<String>().c_str()));
           wl_status_t connectionStatus = WiFi.begin(item["ssid"].as<String>().c_str(), item["password"].as<String>().c_str());
           Serial.println("Connection status: " + String(connectionStatus));
@@ -371,7 +430,8 @@ bool wifiConnectJSON()
     }
   }
 
-  delay(3000);
+  delay(1000);
+  sleepyDog.feed(); /* Avoid going to low power inmediately after a wifi connection */
   return WiFi.status() == WL_CONNECTED;
 }
 
@@ -390,13 +450,13 @@ bool readEntriesJSON()
   }
   else
   {
-    // serializeJsonPretty(doc, Serial); // for debugging
+    serializeJsonPretty(doc, Serial); // for debugging
     JsonArray configuredWorkspacesJSON = doc["thetoggler"]["workspaces"].as<JsonArray>();
-    Serial.println("Number of workspaces configured: " + String(configuredWorkspacesJSON.size()));
+    Serial.println("Number of workspaces configured:" + String(configuredWorkspacesJSON.size()));
     if (configuredWorkspacesJSON.size() == 0)
     {
-      doc.clear();
-      M5Dial.Display.clear();
+      doc.clear();  
+      M5Dial.Display.clear(); 
       M5Dial.Display.drawString("No workspaces configured",
                                 M5Dial.Display.width() / 2,
                                 M5Dial.Display.height() / 2);
@@ -429,6 +489,7 @@ bool readEntriesJSON()
             else
             {
               Serial.println("Too many entries in workspace");
+              /** @todo give feedback of this in the display */
             }
             Serial.println("Entry description: " + String(workspaceEntries[numWorkspacesConfigured].entries[workspaceEntries[numWorkspacesConfigured].numOfEntries - 1].getDescription().c_str()));
           }
@@ -453,15 +514,31 @@ void setup()
   M5Dial.Display.setTextDatum(middle_center);
   M5Dial.Display.setTextFont(&fonts::Orbitron_Light_32);
   M5Dial.Display.setTextSize(0.75);
+  M5Dial.Display.setRotation(2);
 
   wifiConnectJSON();
   readEntriesJSON();
   toggl.setAuth(Token);
+
+  // static constexpr const char* const wd[7] = {"Sun", "Mon", "Tue", "Wed",
+  //   "Thr", "Fri", "Sat"};
+
+  // auto dt = M5Dial.Rtc.getDateTime();
+  // Serial.printf("RTC   UTC  :%04d/%02d/%02d (%s)  %02d:%02d:%02d\r\n",
+  //               dt.date.year, dt.date.month, dt.date.date,
+  //               wd[dt.date.weekDay], dt.time.hours, dt.time.minutes,
+  //               dt.time.seconds);
+  // M5Dial.Display.setCursor(0, 0);
+  // M5Dial.Display.printf("RTC   UTC  :%04d/%02d/%02d (%s)  %02d:%02d:%02d",
+  //                       dt.date.year, dt.date.month, dt.date.date,
+  //                       wd[dt.date.weekDay], dt.time.hours, dt.time.minutes,
+  //                       dt.time.seconds);
 }
 
 void loop()
 {
   M5Dial.update();
+
   // The following way to transition to a new state is required as per https://github.com/jrullan/StateMachine/issues/13
   if (nextState)
   {
