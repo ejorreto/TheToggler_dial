@@ -5,6 +5,7 @@
 
 #include "credentials.h"
 #include "timeManager.h"
+#include "sleepyDog.h"
 
 #include "StateMachine.h"
 #include <ArduinoJson.h>
@@ -24,7 +25,7 @@ uint8_t numWorkspacesConfigured = 0;
 
 /* Global variables */
 const int STATE_DELAY = 0;
-const int SCREEN_OFF_DELAY = 10000;
+SleepyDog sleepyDog(10000);
 StateMachine machine = StateMachine();
 Toggl toggl;
 TimeManager timeManager;
@@ -172,7 +173,7 @@ void stateTimeEntrySelection()
 
   if (machine.executeOnce)
   {
-    lastTime = currentTime; /* Reset the countdown */
+    sleepyDog.feed();
     M5Dial.Display.clear();
     M5Dial.Display.drawString(String(numOfTasks) + " time entries",
                               M5Dial.Display.width() / 2,
@@ -182,7 +183,7 @@ void stateTimeEntrySelection()
   long newPosition = M5Dial.Encoder.read();
   if (newPosition != oldPosition)
   {
-    lastTime = currentTime;
+    sleepyDog.feed();
     M5Dial.Speaker.tone(8000, 20);
     M5Dial.Display.clear();
     oldPosition = newPosition;
@@ -198,7 +199,7 @@ void stateTimeEntrySelection()
 
   if (M5Dial.BtnA.wasPressed())
   {
-    lastTime = currentTime;
+    sleepyDog.feed();
     M5Dial.Speaker.tone(6000, 20);
     String currentTimestamp = "No time";
 
@@ -282,7 +283,7 @@ void stateTimeEntrySelection()
                                   M5Dial.Display.width() / 2,
                                   M5Dial.Display.height() / 2);
         String currentTimestamp = timeManager.getCurrentTime("UTC");
-        lastTime = currentTime; /* Avoid going to low power inmediately after getting the current time */
+        sleepyDog.feed(); /* Avoid going to low power inmediately after getting the current time */
         if (currentTimestamp.length() > 1)
         {
           Serial.println(currentTimestamp.c_str());
@@ -330,7 +331,7 @@ void stateTimeEntrySelection()
   }
 
   /* Move to the low power state if the encoder or the button were not used in some time */
-  if (currentTime - lastTime > SCREEN_OFF_DELAY)
+  if (sleepyDog.isSleeping())
   {
     nextState = S2;
   }
@@ -430,7 +431,7 @@ bool wifiConnectJSON()
   }
 
   delay(1000);
-  lastTime = currentTime; /* Avoid going to low power inmediately after a wifi connection */
+  sleepyDog.feed(); /* Avoid going to low power inmediately after a wifi connection */
   return WiFi.status() == WL_CONNECTED;
 }
 
@@ -449,13 +450,13 @@ bool readEntriesJSON()
   }
   else
   {
-    // serializeJsonPretty(doc, Serial); // for debugging
+    serializeJsonPretty(doc, Serial); // for debugging
     JsonArray configuredWorkspacesJSON = doc["thetoggler"]["workspaces"].as<JsonArray>();
-    Serial.println("Number of workspaces configured: " + String(configuredWorkspacesJSON.size()));
+    Serial.println("Number of workspaces configured:" + String(configuredWorkspacesJSON.size()));
     if (configuredWorkspacesJSON.size() == 0)
     {
-      doc.clear();
-      M5Dial.Display.clear();
+      doc.clear();  
+      M5Dial.Display.clear(); 
       M5Dial.Display.drawString("No workspaces configured",
                                 M5Dial.Display.width() / 2,
                                 M5Dial.Display.height() / 2);
@@ -532,13 +533,10 @@ void setup()
   //                       dt.date.year, dt.date.month, dt.date.date,
   //                       wd[dt.date.weekDay], dt.time.hours, dt.time.minutes,
   //                       dt.time.seconds);
-  lastTime = millis();
-  currentTime = lastTime;
 }
 
 void loop()
 {
-  currentTime = millis();
   M5Dial.update();
 
   // The following way to transition to a new state is required as per https://github.com/jrullan/StateMachine/issues/13
