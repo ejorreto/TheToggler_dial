@@ -1,5 +1,6 @@
 
 #include "M5Dial.h"
+#include "WiFi.h"
 #include "task.h"
 #include "Toggl.h"
 
@@ -12,6 +13,7 @@
 
 #define MAX_NUM_WORKSPACES 10
 #define MAX_ENTRIES_PER_WORKSPACE 20
+#define MAX_NUM_PROJECTS 20
 
 typedef struct workspaceEntries_t
 {
@@ -21,6 +23,8 @@ typedef struct workspaceEntries_t
 } workspaceEntries_t;
 
 workspaceEntries_t workspaceEntries[MAX_NUM_WORKSPACES];
+Project projects[MAX_NUM_PROJECTS];
+uint32_t numProjectsReceived = 0;
 uint8_t numWorkspacesConfigured = 0;
 
 /* Global variables */
@@ -155,6 +159,20 @@ void stateWorkplaceSelection()
           break;
         }
       }
+
+      /* And lets assign the project name to each of the configured tasks in the selected workspace */
+      toggl.getProjects(projects, MAX_NUM_PROJECTS, &numProjectsReceived, workspaceEntries[registeredWorkspaceIndex].workspaceId);
+      for(int i = 0; i< workspaceEntries[registeredWorkspaceIndex].numOfEntries; i++)
+      {
+        for (int j = 0; j < numProjectsReceived; j++)
+        {
+          if (workspaceEntries[registeredWorkspaceIndex].entries[i].getProjectId() == projects[j].getId())
+          {
+            workspaceEntries[registeredWorkspaceIndex].entries[i].setProjectName(projects[j].getName());
+            // Serial.println("Set Project name: " + String(workspaceEntries[registeredWorkspaceIndex].entries[i].getProjectName().c_str()));
+          }
+        }
+      }
       delay(1000);
       nextState = S1;
     }
@@ -192,7 +210,7 @@ void stateTimeEntrySelection()
     M5Dial.Display.drawString(selectedTasks[((newPosition % numOfTasks) + numOfTasks) % numOfTasks].getDescription().c_str(),
                               M5Dial.Display.width() / 2,
                               M5Dial.Display.height() / 2);
-    M5Dial.Display.drawString(String(selectedTasks[((newPosition % numOfTasks) + numOfTasks) % numOfTasks].getProjectId()).c_str(),
+    M5Dial.Display.drawString((selectedTasks[((newPosition % numOfTasks) + numOfTasks) % numOfTasks].getProjectName()).c_str(),
                               M5Dial.Display.width() / 2,
                               M5Dial.Display.height() / 2 + 30);
   }
