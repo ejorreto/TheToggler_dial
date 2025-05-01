@@ -49,6 +49,7 @@ private:
    * @return String
    */
   String formatISODate(const String &dateTime);
+  String formatTmToISO8601(const tm* timeinfo);
 
 public:
 /**
