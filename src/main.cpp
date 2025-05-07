@@ -29,7 +29,7 @@ uint8_t numWorkspacesConfigured = 0;
 
 /* Global variables */
 const int STATE_DELAY = 0;
-SleepyDog sleepyDog(10000);
+SleepyDog sleepyDog(30000);
 StateMachine machine = StateMachine();
 Toggl toggl;
 TimeManager timeManager;
@@ -92,6 +92,13 @@ void stateWorkplaceSelection()
 
     if (WiFi.status() == WL_CONNECTED)
     {
+      M5Dial.Display.clear();
+      M5Dial.Display.drawString("Getting",
+                                M5Dial.Display.width() / 2,
+                                M5Dial.Display.height() / 2);
+      M5Dial.Display.drawString("workspaces",
+                                M5Dial.Display.width() / 2,
+                                M5Dial.Display.height() / 2 + 30);
       errorCode = toggl.getWorkSpaces(receivedWorkspaces, MAX_NUM_WORKSPACES, &numReceivedWorkspaces);
 
       if (errorCode != TOGGL_API_EC_OK)
@@ -116,9 +123,12 @@ void stateWorkplaceSelection()
         else
         {
           M5Dial.Display.clear();
-          M5Dial.Display.drawString("Select workplace",
+          M5Dial.Display.drawString("Select",
                                     M5Dial.Display.width() / 2,
                                     M5Dial.Display.height() / 2);
+          M5Dial.Display.drawString("workspace",
+                                    M5Dial.Display.width() / 2,
+                                    M5Dial.Display.height() / 2 + 30);
         }
       }
     }
@@ -317,8 +327,8 @@ void stateTimeEntrySelection()
             /* Show info about the newly created time entry from the API */
             M5Dial.Display.setTextSize(0.45);
             M5Dial.Display.drawString(newTimeEntry.getAt().c_str(),
-            M5Dial.Display.width() / 2,
-            M5Dial.Display.height() / 2 - 30);
+                                      M5Dial.Display.width() / 2,
+                                      M5Dial.Display.height() / 2 - 30);
             M5Dial.Display.setTextSize(0.75);
             M5Dial.Display.drawString(newTimeEntry.getDescription().c_str(),
                                       M5Dial.Display.width() / 2,

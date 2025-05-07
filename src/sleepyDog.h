@@ -11,7 +11,7 @@ private:
   uint32_t lastFeedTime;
 
 public:
-  SleepyDog(uint32_t i_timeToSleepMs = 10000);
+  SleepyDog(uint32_t i_timeToSleepMs = 30000);
   ~SleepyDog();
   /**
    * @brief Keep the dog awake by feeding it

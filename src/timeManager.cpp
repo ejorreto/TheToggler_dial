@@ -3,50 +3,48 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 
+#define NTP_SERVER1 "0.pool.ntp.org"
+#define NTP_SERVER2 "1.pool.ntp.org"
+#define NTP_SERVER3 "2.pool.ntp.org"
+
+#include <esp_sntp.h> /* For ESP32-S3, other versions might use different headers */
+
 TimeManager::TimeManager()
 {
 }
 
 const String TimeManager::getCurrentTime(const String Timezone)
 {
-  /** @todo improve error handling */
-  int16_t HTTP_Code{};
-  String Output{};
-  HTTPClient http;
+  configTzTime(Timezone.c_str(), NTP_SERVER1, NTP_SERVER2, NTP_SERVER3);
 
-  http.begin("https://timeapi.io/api/time/current/zone?timeZone=" + Timezone, timeapi_io_ca);
-
-  HTTP_Code = http.GET();
-
-  if (HTTP_Code >= 200 && HTTP_Code <= 226)
+  while (sntp_get_sync_status() != SNTP_SYNC_STATUS_COMPLETED)
   {
-    StaticJsonDocument<46> filter;
-    filter["dateTime"] = true;
-
-    const size_t capacity = JSON_OBJECT_SIZE(4);
-    DynamicJsonDocument doc(capacity);
-
-    deserializeJson(doc, http.getString(), DeserializationOption::Filter(filter));
-
-    const String TMP_Str = doc["dateTime"];
-    Output = formatISODate(TMP_Str);
-  }
-  else
-  {
-    /* Error getting the current time from the time API. Do nothing */
+    /** @todo Add a protection limit to avoid entering an infinite loop */
+    Serial.print('.');
+    delay(1000);
   }
 
-  http.end();
-  return Output;
+  Serial.println("\r\n NTP Connected.");
+  auto t = time(nullptr);
+  /** @todo use something besides gmtime, that uses UTC by default and would be better allowing using a different time zone for flexibility */
+  auto tm = gmtime(&t);
+
+  String now = formatTmToISO8601(tm);
+  Serial.println("Current time: " + now);
+
+  return now;
 }
 
-String TimeManager::formatISODate(const String &dateTime)
+String TimeManager::formatTmToISO8601(const tm *timeinfo)
 {
-  int decimalPos = dateTime.indexOf('.');
-  if (decimalPos != -1)
-  {
-    return dateTime.substring(0, decimalPos) + "Z";
-  }
-  // If no decimal point found, just append Z
-  return dateTime + "Z";
+  char buffer[25];
+  snprintf(buffer, sizeof(buffer),
+           "%04d-%02d-%02dT%02d:%02d:%02dZ",
+           timeinfo->tm_year + 1900,
+           timeinfo->tm_mon + 1,
+           timeinfo->tm_mday,
+           timeinfo->tm_hour,
+           timeinfo->tm_min,
+           timeinfo->tm_sec);
+  return String(buffer);
 }
