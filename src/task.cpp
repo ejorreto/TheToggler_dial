@@ -20,6 +20,11 @@ int Task::getProjectId() const
   return projectId;
 }
 
+std::string Task::getProjectName() const
+{
+  return projectName;
+}
+
 void Task::setDescription(const std::string &desc)
 {
   description = desc;
@@ -28,6 +33,11 @@ void Task::setDescription(const std::string &desc)
 void Task::setProjectId(int projId)
 {
   projectId = projId;
+}
+
+void Task::setProjectName(const std::string &name)
+{
+  projectName = name;
 }
 
 std::string Task::toString() const

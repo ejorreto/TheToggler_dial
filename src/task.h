@@ -8,6 +8,7 @@ private:
     int id;
     std::string description;
     int projectId;
+    std::string projectName = "-";
 
 public:
     // Constructor
@@ -18,10 +19,12 @@ public:
     int getId() const;
     std::string getDescription() const;
     int getProjectId() const;
+    std::string getProjectName() const;
 
     // Setters
     void setDescription(const std::string& desc);
     void setProjectId(int projId);
+    void setProjectName(const std::string& name);
 
     // Utility methods
     std::string toString() const;
