@@ -37,11 +37,14 @@ long oldPosition = -999;
 unsigned long lastTime = 0;
 unsigned long currentTime = 0;
 const int delayBetweenRetries = 5000;
+String lastSuccessfulSSID = "";
+String lastSuccessfulPassword = "";
 
 /* Functions declaration */
 
 // WiFi connection
 bool wifiConnectJSON();
+void updateDisplayWiFiStatus();
 
 // Workspaces and entries from JSON
 bool readEntriesJSON();
@@ -388,76 +391,93 @@ void stateLowPower()
  */
 bool wifiConnectJSON()
 {
-  int numRetries = 5;
+  int numRetries = 2;
 
+  // Try last successful connection first
+  if (lastSuccessfulSSID.length() > 0) {
+    M5Dial.Display.clear();
+    M5Dial.Display.drawString("Trying last",
+                              M5Dial.Display.width() / 2,
+                              M5Dial.Display.height() / 2);
+    M5Dial.Display.drawString(lastSuccessfulSSID.c_str(),
+                              M5Dial.Display.width() / 2,
+                              M5Dial.Display.height() / 2 + 30);
+    
+    while (WiFi.status() != WL_CONNECTED && numRetries > 0) {
+      Serial.println("Trying last successful WiFi: " + lastSuccessfulSSID);
+      wl_status_t connectionStatus = WiFi.begin(lastSuccessfulSSID.c_str(), lastSuccessfulPassword.c_str());
+      Serial.println("Connection status: " + String(connectionStatus));
+      delay(delayBetweenRetries);
+      numRetries--;
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+      updateDisplayWiFiStatus();
+      return true;
+    }
+  }
+
+  // If last successful connection failed, try others from JSON
   JsonDocument doc;
   DeserializationError jsonErrorCode = deserializeJson(doc, settingsJson);
-  if (jsonErrorCode != DeserializationError::Ok)
-  {
+  if (jsonErrorCode != DeserializationError::Ok) {
     doc.clear();
     Serial.println("Error deserializing JSON: " + String(jsonErrorCode.c_str()));
+    return false;
   }
-  else
-  {
-    // serializeJsonPretty(doc, Serial); // for debugging
-    JsonArray data = doc["thetoggler"]["network"].as<JsonArray>();
-    Serial.println("Number of wifi networks configured: " + String(data.size()));
-    if (data.size() == 0)
-    {
-      doc.clear();
+
+  JsonArray data = doc["thetoggler"]["network"].as<JsonArray>();
+  Serial.println("Number of wifi networks configured: " + String(data.size()));
+  
+  if (data.size() == 0) {
+    doc.clear();
+    M5Dial.Display.clear();
+    M5Dial.Display.drawString("No wifi settings",
+                              M5Dial.Display.width() / 2,
+                              M5Dial.Display.height() / 2);
+    delay(1000);
+    return false;
+  }
+
+  // Try each network in JSON
+  for (JsonVariant item : data) {
+    numRetries = 5;
+    String currentSSID = item["ssid"].as<String>();
+    String currentPassword = item["password"].as<String>();
+
+    while (WiFi.status() != WL_CONNECTED && numRetries > 0) {
       M5Dial.Display.clear();
-      M5Dial.Display.drawString("No wifi settings",
+      M5Dial.Display.drawString("Connecting",
                                 M5Dial.Display.width() / 2,
                                 M5Dial.Display.height() / 2);
-      delay(1000);
-    }
-    else
-    {
-      for (JsonVariant item : data)
-      {
-        numRetries = 5;
-
-        while (WiFi.status() != WL_CONNECTED && numRetries > 0)
-        {
-          M5Dial.Display.clear();
-          M5Dial.Display.drawString("Connecting",
-                                    M5Dial.Display.width() / 2,
-                                    M5Dial.Display.height() / 2);
-          M5Dial.Display.drawString(String(item["ssid"].as<String>().c_str()),
-                                    M5Dial.Display.width() / 2,
-                                    M5Dial.Display.height() / 2 + 30);
-          Serial.println("Trying wifi: " + String(item["ssid"].as<String>().c_str()));
-          wl_status_t connectionStatus = WiFi.begin(item["ssid"].as<String>().c_str(), item["password"].as<String>().c_str());
-          Serial.println("Connection status: " + String(connectionStatus));
-          delay(delayBetweenRetries);
-          numRetries--;
-        }
-      }
-      doc.clear();
-    }
-
-    if (WiFi.status() == WL_CONNECTED)
-    {
-      M5Dial.Display.clear();
-      M5Dial.Display.drawString("Wifi ON",
-                                M5Dial.Display.width() / 2,
-                                M5Dial.Display.height() / 2);
-      M5Dial.Display.drawString(WiFi.SSID().c_str(),
+      M5Dial.Display.drawString(currentSSID.c_str(),
                                 M5Dial.Display.width() / 2,
                                 M5Dial.Display.height() / 2 + 30);
-      Serial.println(WiFi.localIP());
+      
+      Serial.println("Trying wifi: " + currentSSID);
+      wl_status_t connectionStatus = WiFi.begin(currentSSID.c_str(), currentPassword.c_str());
+      Serial.println("Connection status: " + String(connectionStatus));
+      delay(delayBetweenRetries);
+      numRetries--;
+      
+      if (WiFi.status() == WL_CONNECTED) {
+        // Save successful credentials
+        lastSuccessfulSSID = currentSSID;
+        lastSuccessfulPassword = currentPassword;
+        break;
+      }
     }
-    else
-    {
-      M5Dial.Display.clear();
-      M5Dial.Display.drawString("Wifi OFF",
-                                M5Dial.Display.width() / 2,
-                                M5Dial.Display.height() / 2);
+    
+    if (WiFi.status() == WL_CONNECTED) {
+      break;
     }
   }
+  doc.clear();
 
+  // Update display and return status
+  updateDisplayWiFiStatus();
   delay(1000);
-  sleepyDog.feed(); /* Avoid going to low power inmediately after a wifi connection */
+  sleepyDog.feed();
   return WiFi.status() == WL_CONNECTED;
 }
 
@@ -529,6 +549,24 @@ bool readEntriesJSON()
   }
 
   return true;
+}
+
+// Add this helper function to reduce code duplication
+void updateDisplayWiFiStatus() {
+  M5Dial.Display.clear();
+  if (WiFi.status() == WL_CONNECTED) {
+    M5Dial.Display.drawString("Wifi ON",
+                              M5Dial.Display.width() / 2,
+                              M5Dial.Display.height() / 2);
+    M5Dial.Display.drawString(WiFi.SSID().c_str(),
+                              M5Dial.Display.width() / 2,
+                              M5Dial.Display.height() / 2 + 30);
+    Serial.println(WiFi.localIP());
+  } else {
+    M5Dial.Display.drawString("Wifi OFF",
+                              M5Dial.Display.width() / 2,
+                              M5Dial.Display.height() / 2);
+  }
 }
 
 void setup()
