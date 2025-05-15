@@ -1,5 +1,4 @@
 #include "M5Dial.h"
-#include "WiFi.h"
 #include "task.h"
 #include "Toggl.h"
 
@@ -9,6 +8,7 @@
 
 #include "StateMachine.h"
 #include <ArduinoJson.h>
+#include "wifiManager.h"
 
 #define MAX_NUM_WORKSPACES 10
 #define MAX_ENTRIES_PER_WORKSPACE 20
@@ -35,22 +35,11 @@ TimeManager timeManager;
 long oldPosition = -999;
 unsigned long lastTime = 0;
 unsigned long currentTime = 0;
-const int delayBetweenRetries = 5000;
-String lastSuccessfulSSID = "";
-String lastSuccessfulPassword = "";
+
+// Add WifiManager instance
+WifiManager wifiManager;
 
 /* Functions declaration */
-
-// WiFi connection
-typedef enum {
-    WIFI_CONNECT_SUCCESS = 0,
-    WIFI_CONNECT_ERROR_JSON = 1,
-    WIFI_CONNECT_ERROR_NO_NETWORKS = 2,
-    WIFI_CONNECT_ERROR_FAILED = 3
-} wifi_connect_status_t;
-
-wifi_connect_status_t wifiConnectJSON(void);
-void updateDisplayWiFiStatus();
 
 // Workspaces and entries from JSON
 bool readEntriesJSON();
@@ -96,7 +85,7 @@ void stateWorkplaceSelection()
     /* This will be executed only when entering the state */
     if ((WiFi.status() != WL_CONNECTED))
     {
-      wifiConnectJSON();
+      wifiManager.connect(settingsJson);
     }
 
     if (WiFi.status() == WL_CONNECTED)
@@ -236,7 +225,7 @@ void stateTimeEntrySelection()
 
     if ((WiFi.status() != WL_CONNECTED))
     {
-      wifiConnectJSON();
+      wifiManager.connect(settingsJson);
     }
 
     if ((WiFi.status() == WL_CONNECTED))
@@ -377,7 +366,7 @@ void stateLowPower()
   if (machine.executeOnce)
   {
     screenOff();
-    WiFi.disconnect();
+    wifiManager.disconnect();
   }
 
   long newPosition = M5Dial.Encoder.read();
@@ -388,101 +377,6 @@ void stateLowPower()
     screenOn();
     nextState = S1;
   }
-}
-/**
- * @brief Connect to wifi using the credentials in the JSON configuration string. It will retry a number of times on each wifi until connected.
- *
- * @return wifi_connect_status_t indicating the connection status
- */
-wifi_connect_status_t wifiConnectJSON(void)
-{
-    wifi_connect_status_t status = WIFI_CONNECT_ERROR_FAILED;
-    const uint8_t maxRetries = 5U;
-    uint8_t numRetries = 2U;
-    bool isConnected = false;
-
-    /* Try last successful connection first */
-    if (lastSuccessfulSSID.length() > 0U) {
-        const char* const ssid = lastSuccessfulSSID.c_str();
-        const char* const password = lastSuccessfulPassword.c_str();
-        
-        updateDisplayWiFiStatus();
-        
-        while ((WiFi.status() != WL_CONNECTED) && (numRetries > 0U)) {
-            Serial.println("Trying last successful WiFi: " + lastSuccessfulSSID);
-            const wl_status_t connectionStatus = WiFi.begin(ssid, password);
-            Serial.println("Connection status: " + String(connectionStatus));
-            delay(delayBetweenRetries);
-            numRetries--;
-        }
-
-        isConnected = (WiFi.status() == WL_CONNECTED);
-        if (isConnected) {
-            updateDisplayWiFiStatus();
-            status = WIFI_CONNECT_SUCCESS;
-            return status;
-        }
-    }
-
-    /* If last successful connection failed, try others from JSON */
-    JsonDocument doc;
-    const DeserializationError jsonErrorCode = deserializeJson(doc, settingsJson);
-    if (jsonErrorCode != DeserializationError::Ok) {
-        doc.clear();
-        Serial.println("Error deserializing JSON: " + String(jsonErrorCode.c_str()));
-        status = WIFI_CONNECT_ERROR_JSON;
-        return status;
-    }
-
-    const JsonArray networks = doc["thetoggler"]["network"].as<JsonArray>();
-    const size_t networkCount = networks.size();
-    Serial.println("Number of wifi networks configured: " + String(networkCount));
-    
-    if (networkCount == 0U) {
-        doc.clear();
-        updateDisplayWiFiStatus();
-        delay(1000U);
-        status = WIFI_CONNECT_ERROR_NO_NETWORKS;
-        return status;
-    }
-
-    /* Try each network in JSON */
-    for (const JsonVariant& network : networks) {
-        if (isConnected) {
-            break;
-        }
-
-        numRetries = maxRetries;
-        const String currentSSID = network["ssid"].as<String>();
-        const String currentPassword = network["password"].as<String>();
-        const char* const ssid = currentSSID.c_str();
-        const char* const password = currentPassword.c_str();
-
-        while ((WiFi.status() != WL_CONNECTED) && (numRetries > 0U)) {
-            updateDisplayWiFiStatus();
-            
-            Serial.println("Trying wifi: " + currentSSID);
-            const wl_status_t connectionStatus = WiFi.begin(ssid, password);
-            Serial.println("Connection status: " + String(connectionStatus));
-            delay(delayBetweenRetries);
-            numRetries--;
-            
-            isConnected = (WiFi.status() == WL_CONNECTED);
-            if (isConnected) {
-                lastSuccessfulSSID = currentSSID;
-                lastSuccessfulPassword = currentPassword;
-                break;
-            }
-        }
-    }
-    doc.clear();
-
-    updateDisplayWiFiStatus();
-    delay(1000U);
-    sleepyDog.feed();
-    
-    status = isConnected ? WIFI_CONNECT_SUCCESS : WIFI_CONNECT_ERROR_FAILED;
-    return status;
 }
 
 bool readEntriesJSON()
@@ -555,24 +449,6 @@ bool readEntriesJSON()
   return true;
 }
 
-// Add this helper function to reduce code duplication
-void updateDisplayWiFiStatus() {
-  M5Dial.Display.clear();
-  if (WiFi.status() == WL_CONNECTED) {
-    M5Dial.Display.drawString("Wifi ON",
-                              M5Dial.Display.width() / 2,
-                              M5Dial.Display.height() / 2);
-    M5Dial.Display.drawString(WiFi.SSID().c_str(),
-                              M5Dial.Display.width() / 2,
-                              M5Dial.Display.height() / 2 + 30);
-    Serial.println(WiFi.localIP());
-  } else {
-    M5Dial.Display.drawString("Wifi OFF",
-                              M5Dial.Display.width() / 2,
-                              M5Dial.Display.height() / 2);
-  }
-}
-
 void setup()
 {
   Serial.begin(115200);
@@ -584,7 +460,7 @@ void setup()
   M5Dial.Display.setTextSize(0.75);
   M5Dial.Display.setRotation(2);
 
-  wifiConnectJSON();
+  wifiManager.connect(settingsJson);
   readEntriesJSON();
   toggl.setAuth(Token);
 
