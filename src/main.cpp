@@ -1,4 +1,3 @@
-
 #include "M5Dial.h"
 #include "WiFi.h"
 #include "task.h"
@@ -43,7 +42,14 @@ String lastSuccessfulPassword = "";
 /* Functions declaration */
 
 // WiFi connection
-bool wifiConnectJSON();
+typedef enum {
+    WIFI_CONNECT_SUCCESS = 0,
+    WIFI_CONNECT_ERROR_JSON = 1,
+    WIFI_CONNECT_ERROR_NO_NETWORKS = 2,
+    WIFI_CONNECT_ERROR_FAILED = 3
+} wifi_connect_status_t;
+
+wifi_connect_status_t wifiConnectJSON(void);
 void updateDisplayWiFiStatus();
 
 // Workspaces and entries from JSON
@@ -386,99 +392,97 @@ void stateLowPower()
 /**
  * @brief Connect to wifi using the credentials in the JSON configuration string. It will retry a number of times on each wifi until connected.
  *
- * @return true if connected
- * @return false if not connected
+ * @return wifi_connect_status_t indicating the connection status
  */
-bool wifiConnectJSON()
+wifi_connect_status_t wifiConnectJSON(void)
 {
-  int numRetries = 2;
+    wifi_connect_status_t status = WIFI_CONNECT_ERROR_FAILED;
+    const uint8_t maxRetries = 5U;
+    uint8_t numRetries = 2U;
+    bool isConnected = false;
 
-  // Try last successful connection first
-  if (lastSuccessfulSSID.length() > 0) {
-    M5Dial.Display.clear();
-    M5Dial.Display.drawString("Trying last",
-                              M5Dial.Display.width() / 2,
-                              M5Dial.Display.height() / 2);
-    M5Dial.Display.drawString(lastSuccessfulSSID.c_str(),
-                              M5Dial.Display.width() / 2,
-                              M5Dial.Display.height() / 2 + 30);
+    /* Try last successful connection first */
+    if (lastSuccessfulSSID.length() > 0U) {
+        const char* const ssid = lastSuccessfulSSID.c_str();
+        const char* const password = lastSuccessfulPassword.c_str();
+        
+        updateDisplayWiFiStatus();
+        
+        while ((WiFi.status() != WL_CONNECTED) && (numRetries > 0U)) {
+            Serial.println("Trying last successful WiFi: " + lastSuccessfulSSID);
+            const wl_status_t connectionStatus = WiFi.begin(ssid, password);
+            Serial.println("Connection status: " + String(connectionStatus));
+            delay(delayBetweenRetries);
+            numRetries--;
+        }
+
+        isConnected = (WiFi.status() == WL_CONNECTED);
+        if (isConnected) {
+            updateDisplayWiFiStatus();
+            status = WIFI_CONNECT_SUCCESS;
+            return status;
+        }
+    }
+
+    /* If last successful connection failed, try others from JSON */
+    JsonDocument doc;
+    const DeserializationError jsonErrorCode = deserializeJson(doc, settingsJson);
+    if (jsonErrorCode != DeserializationError::Ok) {
+        doc.clear();
+        Serial.println("Error deserializing JSON: " + String(jsonErrorCode.c_str()));
+        status = WIFI_CONNECT_ERROR_JSON;
+        return status;
+    }
+
+    const JsonArray networks = doc["thetoggler"]["network"].as<JsonArray>();
+    const size_t networkCount = networks.size();
+    Serial.println("Number of wifi networks configured: " + String(networkCount));
     
-    while (WiFi.status() != WL_CONNECTED && numRetries > 0) {
-      Serial.println("Trying last successful WiFi: " + lastSuccessfulSSID);
-      wl_status_t connectionStatus = WiFi.begin(lastSuccessfulSSID.c_str(), lastSuccessfulPassword.c_str());
-      Serial.println("Connection status: " + String(connectionStatus));
-      delay(delayBetweenRetries);
-      numRetries--;
+    if (networkCount == 0U) {
+        doc.clear();
+        updateDisplayWiFiStatus();
+        delay(1000U);
+        status = WIFI_CONNECT_ERROR_NO_NETWORKS;
+        return status;
     }
 
-    if (WiFi.status() == WL_CONNECTED) {
-      updateDisplayWiFiStatus();
-      return true;
-    }
-  }
+    /* Try each network in JSON */
+    for (const JsonVariant& network : networks) {
+        if (isConnected) {
+            break;
+        }
 
-  // If last successful connection failed, try others from JSON
-  JsonDocument doc;
-  DeserializationError jsonErrorCode = deserializeJson(doc, settingsJson);
-  if (jsonErrorCode != DeserializationError::Ok) {
+        numRetries = maxRetries;
+        const String currentSSID = network["ssid"].as<String>();
+        const String currentPassword = network["password"].as<String>();
+        const char* const ssid = currentSSID.c_str();
+        const char* const password = currentPassword.c_str();
+
+        while ((WiFi.status() != WL_CONNECTED) && (numRetries > 0U)) {
+            updateDisplayWiFiStatus();
+            
+            Serial.println("Trying wifi: " + currentSSID);
+            const wl_status_t connectionStatus = WiFi.begin(ssid, password);
+            Serial.println("Connection status: " + String(connectionStatus));
+            delay(delayBetweenRetries);
+            numRetries--;
+            
+            isConnected = (WiFi.status() == WL_CONNECTED);
+            if (isConnected) {
+                lastSuccessfulSSID = currentSSID;
+                lastSuccessfulPassword = currentPassword;
+                break;
+            }
+        }
+    }
     doc.clear();
-    Serial.println("Error deserializing JSON: " + String(jsonErrorCode.c_str()));
-    return false;
-  }
 
-  JsonArray data = doc["thetoggler"]["network"].as<JsonArray>();
-  Serial.println("Number of wifi networks configured: " + String(data.size()));
-  
-  if (data.size() == 0) {
-    doc.clear();
-    M5Dial.Display.clear();
-    M5Dial.Display.drawString("No wifi settings",
-                              M5Dial.Display.width() / 2,
-                              M5Dial.Display.height() / 2);
-    delay(1000);
-    return false;
-  }
-
-  // Try each network in JSON
-  for (JsonVariant item : data) {
-    numRetries = 5;
-    String currentSSID = item["ssid"].as<String>();
-    String currentPassword = item["password"].as<String>();
-
-    while (WiFi.status() != WL_CONNECTED && numRetries > 0) {
-      M5Dial.Display.clear();
-      M5Dial.Display.drawString("Connecting",
-                                M5Dial.Display.width() / 2,
-                                M5Dial.Display.height() / 2);
-      M5Dial.Display.drawString(currentSSID.c_str(),
-                                M5Dial.Display.width() / 2,
-                                M5Dial.Display.height() / 2 + 30);
-      
-      Serial.println("Trying wifi: " + currentSSID);
-      wl_status_t connectionStatus = WiFi.begin(currentSSID.c_str(), currentPassword.c_str());
-      Serial.println("Connection status: " + String(connectionStatus));
-      delay(delayBetweenRetries);
-      numRetries--;
-      
-      if (WiFi.status() == WL_CONNECTED) {
-        // Save successful credentials
-        lastSuccessfulSSID = currentSSID;
-        lastSuccessfulPassword = currentPassword;
-        break;
-      }
-    }
+    updateDisplayWiFiStatus();
+    delay(1000U);
+    sleepyDog.feed();
     
-    if (WiFi.status() == WL_CONNECTED) {
-      break;
-    }
-  }
-  doc.clear();
-
-  // Update display and return status
-  updateDisplayWiFiStatus();
-  delay(1000);
-  sleepyDog.feed();
-  return WiFi.status() == WL_CONNECTED;
+    status = isConnected ? WIFI_CONNECT_SUCCESS : WIFI_CONNECT_ERROR_FAILED;
+    return status;
 }
 
 bool readEntriesJSON()
