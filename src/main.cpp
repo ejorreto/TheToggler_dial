@@ -83,12 +83,12 @@ void stateWorkplaceSelection()
   if (machine.executeOnce)
   {
     /* This will be executed only when entering the state */
-    if ((WiFi.status() != WL_CONNECTED))
+    if (wifiManager.isConnected() == false)
     {
       wifiManager.connect(settingsJson);
     }
 
-    if (WiFi.status() == WL_CONNECTED)
+    if (wifiManager.isConnected())
     {
       M5Dial.Display.clear();
       M5Dial.Display.drawString("Getting",
@@ -223,12 +223,12 @@ void stateTimeEntrySelection()
     M5Dial.Speaker.tone(6000, 20);
     String currentTimestamp = "No time";
 
-    if ((WiFi.status() != WL_CONNECTED))
+    if (wifiManager.isConnected() == false)
     {
       wifiManager.connect(settingsJson);
     }
 
-    if ((WiFi.status() == WL_CONNECTED))
+    if (wifiManager.isConnected())
     {
       int index = ((newPosition % numOfTasks) + numOfTasks) % numOfTasks;
       if (index == 0)
@@ -373,6 +373,7 @@ void stateLowPower()
 
   if (newPosition != oldPosition)
   {
+    /* Turn screen on when the dial is moved */
     M5Dial.Speaker.tone(8000, 20);
     screenOn();
     nextState = S1;
@@ -463,20 +464,6 @@ void setup()
   wifiManager.connect(settingsJson);
   readEntriesJSON();
   toggl.setAuth(Token);
-
-  // static constexpr const char* const wd[7] = {"Sun", "Mon", "Tue", "Wed",
-  //   "Thr", "Fri", "Sat"};
-
-  // auto dt = M5Dial.Rtc.getDateTime();
-  // Serial.printf("RTC   UTC  :%04d/%02d/%02d (%s)  %02d:%02d:%02d\r\n",
-  //               dt.date.year, dt.date.month, dt.date.date,
-  //               wd[dt.date.weekDay], dt.time.hours, dt.time.minutes,
-  //               dt.time.seconds);
-  // M5Dial.Display.setCursor(0, 0);
-  // M5Dial.Display.printf("RTC   UTC  :%04d/%02d/%02d (%s)  %02d:%02d:%02d",
-  //                       dt.date.year, dt.date.month, dt.date.date,
-  //                       wd[dt.date.weekDay], dt.time.hours, dt.time.minutes,
-  //                       dt.time.seconds);
 }
 
 void loop()
