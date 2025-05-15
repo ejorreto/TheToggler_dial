@@ -1,6 +1,4 @@
-
 #include "M5Dial.h"
-#include "WiFi.h"
 #include "task.h"
 #include "Toggl.h"
 
@@ -10,6 +8,7 @@
 
 #include "StateMachine.h"
 #include <ArduinoJson.h>
+#include "wifiManager.h"
 
 #define MAX_NUM_WORKSPACES 10
 #define MAX_ENTRIES_PER_WORKSPACE 20
@@ -36,12 +35,11 @@ TimeManager timeManager;
 long oldPosition = -999;
 unsigned long lastTime = 0;
 unsigned long currentTime = 0;
-const int delayBetweenRetries = 5000;
+
+// Add WifiManager instance
+WifiManager wifiManager;
 
 /* Functions declaration */
-
-// WiFi connection
-bool wifiConnectJSON();
 
 // Workspaces and entries from JSON
 bool readEntriesJSON();
@@ -85,12 +83,12 @@ void stateWorkplaceSelection()
   if (machine.executeOnce)
   {
     /* This will be executed only when entering the state */
-    if ((WiFi.status() != WL_CONNECTED))
+    if (wifiManager.isConnected() == false)
     {
-      wifiConnectJSON();
+      wifiManager.connect(settingsJson);
     }
 
-    if (WiFi.status() == WL_CONNECTED)
+    if (wifiManager.isConnected())
     {
       M5Dial.Display.clear();
       M5Dial.Display.drawString("Getting",
@@ -225,12 +223,12 @@ void stateTimeEntrySelection()
     M5Dial.Speaker.tone(6000, 20);
     String currentTimestamp = "No time";
 
-    if ((WiFi.status() != WL_CONNECTED))
+    if (wifiManager.isConnected() == false)
     {
-      wifiConnectJSON();
+      wifiManager.connect(settingsJson);
     }
 
-    if ((WiFi.status() == WL_CONNECTED))
+    if (wifiManager.isConnected())
     {
       int index = ((newPosition % numOfTasks) + numOfTasks) % numOfTasks;
       if (index == 0)
@@ -368,97 +366,18 @@ void stateLowPower()
   if (machine.executeOnce)
   {
     screenOff();
-    WiFi.disconnect();
+    wifiManager.disconnect();
   }
 
   long newPosition = M5Dial.Encoder.read();
 
   if (newPosition != oldPosition)
   {
+    /* Turn screen on when the dial is moved */
     M5Dial.Speaker.tone(8000, 20);
     screenOn();
     nextState = S1;
   }
-}
-/**
- * @brief Connect to wifi using the credentials in the JSON configuration string. It will retry a number of times on each wifi until connected.
- *
- * @return true if connected
- * @return false if not connected
- */
-bool wifiConnectJSON()
-{
-  int numRetries = 5;
-
-  JsonDocument doc;
-  DeserializationError jsonErrorCode = deserializeJson(doc, settingsJson);
-  if (jsonErrorCode != DeserializationError::Ok)
-  {
-    doc.clear();
-    Serial.println("Error deserializing JSON: " + String(jsonErrorCode.c_str()));
-  }
-  else
-  {
-    // serializeJsonPretty(doc, Serial); // for debugging
-    JsonArray data = doc["thetoggler"]["network"].as<JsonArray>();
-    Serial.println("Number of wifi networks configured: " + String(data.size()));
-    if (data.size() == 0)
-    {
-      doc.clear();
-      M5Dial.Display.clear();
-      M5Dial.Display.drawString("No wifi settings",
-                                M5Dial.Display.width() / 2,
-                                M5Dial.Display.height() / 2);
-      delay(1000);
-    }
-    else
-    {
-      for (JsonVariant item : data)
-      {
-        numRetries = 5;
-
-        while (WiFi.status() != WL_CONNECTED && numRetries > 0)
-        {
-          M5Dial.Display.clear();
-          M5Dial.Display.drawString("Connecting",
-                                    M5Dial.Display.width() / 2,
-                                    M5Dial.Display.height() / 2);
-          M5Dial.Display.drawString(String(item["ssid"].as<String>().c_str()),
-                                    M5Dial.Display.width() / 2,
-                                    M5Dial.Display.height() / 2 + 30);
-          Serial.println("Trying wifi: " + String(item["ssid"].as<String>().c_str()));
-          wl_status_t connectionStatus = WiFi.begin(item["ssid"].as<String>().c_str(), item["password"].as<String>().c_str());
-          Serial.println("Connection status: " + String(connectionStatus));
-          delay(delayBetweenRetries);
-          numRetries--;
-        }
-      }
-      doc.clear();
-    }
-
-    if (WiFi.status() == WL_CONNECTED)
-    {
-      M5Dial.Display.clear();
-      M5Dial.Display.drawString("Wifi ON",
-                                M5Dial.Display.width() / 2,
-                                M5Dial.Display.height() / 2);
-      M5Dial.Display.drawString(WiFi.SSID().c_str(),
-                                M5Dial.Display.width() / 2,
-                                M5Dial.Display.height() / 2 + 30);
-      Serial.println(WiFi.localIP());
-    }
-    else
-    {
-      M5Dial.Display.clear();
-      M5Dial.Display.drawString("Wifi OFF",
-                                M5Dial.Display.width() / 2,
-                                M5Dial.Display.height() / 2);
-    }
-  }
-
-  delay(1000);
-  sleepyDog.feed(); /* Avoid going to low power inmediately after a wifi connection */
-  return WiFi.status() == WL_CONNECTED;
 }
 
 bool readEntriesJSON()
@@ -542,23 +461,9 @@ void setup()
   M5Dial.Display.setTextSize(0.75);
   M5Dial.Display.setRotation(2);
 
-  wifiConnectJSON();
+  wifiManager.connect(settingsJson);
   readEntriesJSON();
   toggl.setAuth(Token);
-
-  // static constexpr const char* const wd[7] = {"Sun", "Mon", "Tue", "Wed",
-  //   "Thr", "Fri", "Sat"};
-
-  // auto dt = M5Dial.Rtc.getDateTime();
-  // Serial.printf("RTC   UTC  :%04d/%02d/%02d (%s)  %02d:%02d:%02d\r\n",
-  //               dt.date.year, dt.date.month, dt.date.date,
-  //               wd[dt.date.weekDay], dt.time.hours, dt.time.minutes,
-  //               dt.time.seconds);
-  // M5Dial.Display.setCursor(0, 0);
-  // M5Dial.Display.printf("RTC   UTC  :%04d/%02d/%02d (%s)  %02d:%02d:%02d",
-  //                       dt.date.year, dt.date.month, dt.date.date,
-  //                       wd[dt.date.weekDay], dt.time.hours, dt.time.minutes,
-  //                       dt.time.seconds);
 }
 
 void loop()
