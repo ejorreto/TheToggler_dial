@@ -5,6 +5,7 @@
 #include "credentials.h"
 #include "timeManager.h"
 #include "sleepyDog.h"
+#include "SoundManager.h"
 
 #include "StateMachine.h"
 #include <ArduinoJson.h>
@@ -35,6 +36,12 @@ TimeManager timeManager;
 long oldPosition = -999;
 unsigned long lastTime = 0;
 unsigned long currentTime = 0;
+// In main.cpp
+SoundManager soundManager;
+
+// In setup()
+uint8_t dialToneId;
+uint8_t buttonToneId;
 
 // Add WifiManager instance
 WifiManager wifiManager;
@@ -140,7 +147,7 @@ void stateWorkplaceSelection()
     if (newPosition != oldPosition)
     {
       lastTime = currentTime;
-      M5Dial.Speaker.tone(8000, 20);
+      soundManager.playSound(dialToneId);
       M5Dial.Display.clear();
       oldPosition = newPosition;
       Serial.println(newPosition);
@@ -460,6 +467,11 @@ void setup()
   M5Dial.Display.setTextFont(&fonts::Orbitron_Light_32);
   M5Dial.Display.setTextSize(0.75);
   M5Dial.Display.setRotation(2);
+
+  // Register common sounds
+soundManager.registerSound(4000, 20, dialToneId);     // High pitch dial rotation sound
+soundManager.registerSound(6000, 20, buttonToneId);   // Button press sound
+
 
   wifiManager.connect(settingsJson);
   readEntriesJSON();
