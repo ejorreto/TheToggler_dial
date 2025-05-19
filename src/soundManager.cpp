@@ -4,8 +4,8 @@ SoundManager::SoundManager() {
     // Constructor - all sounds initialized as unused through Sound default constructor
 }
 
-SoundManager::sound_status_t SoundManager::registerSound(uint16_t frequency_hz, 
-                                                       uint16_t duration_ms, 
+SoundManager::sound_status_t SoundManager::registerSound(float frequency_hz, 
+                                                       uint32_t duration_ms, 
                                                        uint8_t& soundId) {
     uint8_t slot = findFreeSlot();
     if (slot >= MAX_SOUNDS) {
@@ -36,7 +36,7 @@ SoundManager::sound_status_t SoundManager::unregisterSound(uint8_t soundId) {
 }
 
 uint8_t SoundManager::findFreeSlot() const {
-    for (uint8_t i = 0; i < MAX_SOUNDS; i++) {
+    for (uint8_t i = 0U; i < MAX_SOUNDS; i++) {
         if (!sounds[i].used) {
             return i;
         }
