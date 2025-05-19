@@ -5,7 +5,7 @@
 #include "credentials.h"
 #include "timeManager.h"
 #include "sleepyDog.h"
-#include "SoundManager.h"
+#include "soundManager.h"
 
 #include "StateMachine.h"
 #include <ArduinoJson.h>
@@ -36,12 +36,13 @@ TimeManager timeManager;
 long oldPosition = -999;
 unsigned long lastTime = 0;
 unsigned long currentTime = 0;
-// In main.cpp
-SoundManager soundManager;
 
-// In setup()
+/* Tones management */
+SoundManager soundManager;
 uint8_t dialToneId;
 uint8_t buttonToneId;
+uint8_t readyToneId;
+uint8_t errorToneId;
 
 // Add WifiManager instance
 WifiManager wifiManager;
@@ -67,12 +68,21 @@ Workspace receivedWorkspaces[MAX_NUM_WORKSPACES];
 uint32_t numReceivedWorkspaces = 0;
 int registeredWorkspaceIndex = -1;
 
-/* Screen and power saving */
+/**
+ * @brief Turn off the screen
+ *
+ * @return * void
+ */
 void screenOff()
 {
   // M5Dial.Display.powerSaveOn();
   M5Dial.Display.setBrightness(0);
 }
+
+/**
+ * @brief Turn on the screen
+ *
+ */
 void screenOn()
 {
   lastTime = currentTime;
@@ -108,6 +118,7 @@ void stateWorkplaceSelection()
 
       if (errorCode != TOGGL_API_EC_OK)
       {
+        soundManager.playSound(errorToneId);
         M5Dial.Display.clear();
         M5Dial.Display.drawString("Error " + String(errorCode),
                                   M5Dial.Display.width() / 2,
@@ -118,6 +129,7 @@ void stateWorkplaceSelection()
       }
       else
       {
+        soundManager.playSound(readyToneId);
         if (numReceivedWorkspaces == 0)
         {
           M5Dial.Display.clear();
@@ -158,6 +170,7 @@ void stateWorkplaceSelection()
 
     if (M5Dial.BtnA.wasPressed())
     {
+      soundManager.playSound(buttonToneId);
       sleepyDog.feed();
       /* Lets find the tasks for the selected workspace */
       for (int i = 0; i < MAX_NUM_WORKSPACES; i++)
@@ -205,13 +218,14 @@ void stateTimeEntrySelection()
     M5Dial.Display.drawString(String(numOfTasks) + " time entries",
                               M5Dial.Display.width() / 2,
                               M5Dial.Display.height() / 2);
+    soundManager.playSound(readyToneId);
   }
 
   long newPosition = M5Dial.Encoder.read();
   if (newPosition != oldPosition)
   {
     sleepyDog.feed();
-    M5Dial.Speaker.tone(8000, 20);
+    soundManager.playSound(dialToneId);
     M5Dial.Display.clear();
     oldPosition = newPosition;
     Serial.println(newPosition);
@@ -227,7 +241,7 @@ void stateTimeEntrySelection()
   if (M5Dial.BtnA.wasPressed())
   {
     sleepyDog.feed();
-    M5Dial.Speaker.tone(6000, 20);
+    soundManager.playSound(buttonToneId);
     String currentTimestamp = "No time";
 
     if (wifiManager.isConnected() == false)
@@ -299,7 +313,7 @@ void stateTimeEntrySelection()
       {
         TimeEntry newTimeEntry;
         /* Lets create a new time entry */
-        M5Dial.Speaker.tone(6000, 20);
+        soundManager.playSound(buttonToneId);
         M5Dial.Display.clear();
         M5Dial.Display.drawString("Getting UTC",
                                   M5Dial.Display.width() / 2,
@@ -311,7 +325,7 @@ void stateTimeEntrySelection()
           Serial.println(currentTimestamp.c_str());
 
           M5Dial.Display.clear();
-          M5Dial.Speaker.tone(6000, 20);
+          soundManager.playSound(buttonToneId);
           M5Dial.Display.drawString(currentTimestamp.c_str(),
                                     M5Dial.Display.width() / 2,
                                     M5Dial.Display.height() / 2);
@@ -328,7 +342,7 @@ void stateTimeEntrySelection()
           if (errorCode == TOGGL_API_EC_OK)
           {
             M5Dial.Display.clear();
-            M5Dial.Speaker.tone(6000, 20);
+            soundManager.playSound(buttonToneId);
             /* Show info about the newly created time entry from the API */
             M5Dial.Display.setTextSize(0.45);
             M5Dial.Display.drawString(newTimeEntry.getAt().c_str(),
@@ -381,7 +395,7 @@ void stateLowPower()
   if (newPosition != oldPosition)
   {
     /* Turn screen on when the dial is moved */
-    M5Dial.Speaker.tone(8000, 20);
+    soundManager.playSound(dialToneId);
     screenOn();
     nextState = S1;
   }
@@ -469,9 +483,10 @@ void setup()
   M5Dial.Display.setRotation(2);
 
   // Register common sounds
-soundManager.registerSound(4000, 20, dialToneId);     // High pitch dial rotation sound
-soundManager.registerSound(6000, 20, buttonToneId);   // Button press sound
-
+  soundManager.registerSound(4000, 20, dialToneId);   // High pitch dial rotation sound
+  soundManager.registerSound(6000, 20, buttonToneId); // Button press sound
+  soundManager.registerSound(8000, 20, readyToneId);  // Action required by the user
+  soundManager.registerSound(2000, 20, errorToneId);  // Error sound
 
   wifiManager.connect(settingsJson);
   readEntriesJSON();
