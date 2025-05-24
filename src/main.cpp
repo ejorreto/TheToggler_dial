@@ -5,6 +5,7 @@
 #include "credentials.h"
 #include "timeManager.h"
 #include "sleepyDog.h"
+#include "soundManager.h"
 
 #include "StateMachine.h"
 #include <ArduinoJson.h>
@@ -36,6 +37,13 @@ long oldPosition = -999;
 unsigned long lastTime = 0;
 unsigned long currentTime = 0;
 
+/* Tones management */
+SoundManager soundManager;
+uint8_t dialToneId;
+uint8_t buttonToneId;
+uint8_t readyToneId;
+uint8_t errorToneId;
+
 // Add WifiManager instance
 WifiManager wifiManager;
 
@@ -44,15 +52,15 @@ WifiManager wifiManager;
 // Workspaces and entries from JSON
 bool readEntriesJSON();
 
-// State machine functions
-void stateWorkplaceSelection();
-void stateTimeEntrySelection();
-void stateLowPower();
-
-/* State machine configuration */
-State *S0 = machine.addState(&stateWorkplaceSelection);
-State *S1 = machine.addState(&stateTimeEntrySelection);
-State *S2 = machine.addState(&stateLowPower);
+/* State machine functions */
+void entry_stateWorkplaceSelection();
+void entry_stateTimeEntrySelection();
+void do_stateWorkplaceSelection();
+void do_stateTimeEntrySelection();
+void do_stateLowPower();
+State *stateWorksplaceSelection = machine.addState(&do_stateWorkplaceSelection);
+State *stateTimeEntrySelection = machine.addState(&do_stateTimeEntrySelection);
+State *stateLowPower = machine.addState(&do_stateLowPower);
 State *nextState = nullptr;
 
 /* Workspaces */
@@ -60,12 +68,21 @@ Workspace receivedWorkspaces[MAX_NUM_WORKSPACES];
 uint32_t numReceivedWorkspaces = 0;
 int registeredWorkspaceIndex = -1;
 
-/* Screen and power saving */
+/**
+ * @brief Turn off the screen
+ *
+ * @return * void
+ */
 void screenOff()
 {
   // M5Dial.Display.powerSaveOn();
   M5Dial.Display.setBrightness(0);
 }
+
+/**
+ * @brief Turn on the screen
+ *
+ */
 void screenOn()
 {
   lastTime = currentTime;
@@ -74,62 +91,102 @@ void screenOn()
 }
 
 /**
+ * @brief Entry function for the workplace selection state
+ *
+ */
+void entry_stateWorkplaceSelection()
+{
+  togglApiErrorCode_t errorCode = TOGGL_API_EC_OK;
+  /* This will be executed only when entering the state */
+  if (wifiManager.isConnected() == false)
+  {
+    wifiManager.connect(settingsJson);
+  }
+
+  if (wifiManager.isConnected())
+  {
+    M5Dial.Display.clear();
+    M5Dial.Display.drawString("Getting",
+                              M5Dial.Display.width() / 2,
+                              M5Dial.Display.height() / 2);
+    M5Dial.Display.drawString("workspaces",
+                              M5Dial.Display.width() / 2,
+                              M5Dial.Display.height() / 2 + 30);
+
+    errorCode = toggl.getWorkSpaces(receivedWorkspaces, MAX_NUM_WORKSPACES, &numReceivedWorkspaces);
+
+    if (errorCode != TOGGL_API_EC_OK)
+    {
+      soundManager.playSound(errorToneId);
+      M5Dial.Display.clear();
+      M5Dial.Display.drawString("Error " + String(errorCode),
+                                M5Dial.Display.width() / 2,
+                                M5Dial.Display.height() / 2);
+      /** @todo Display a more comprehensive error in the screen */
+      delay(1000);
+      nextState = stateWorksplaceSelection;
+    }
+    else
+    {
+
+      if (numReceivedWorkspaces == 0)
+      {
+        M5Dial.Display.clear();
+        M5Dial.Display.drawString("No workspaces",
+                                  M5Dial.Display.width() / 2,
+                                  M5Dial.Display.height() / 2);
+        soundManager.playSound(errorToneId);
+      }
+      else
+      {
+        M5Dial.Display.clear();
+        M5Dial.Display.drawString("Select",
+                                  M5Dial.Display.width() / 2,
+                                  M5Dial.Display.height() / 2);
+        M5Dial.Display.drawString("workspace",
+                                  M5Dial.Display.width() / 2,
+                                  M5Dial.Display.height() / 2 + 30);
+        soundManager.playSound(readyToneId);
+      }
+    }
+  }
+  else
+  {
+    M5Dial.Display.clear();
+    M5Dial.Display.drawString("No wifi",
+                              M5Dial.Display.width() / 2,
+                              M5Dial.Display.height() / 2);
+    soundManager.playSound(errorToneId);
+    delay(1000);
+    nextState = stateWorksplaceSelection;
+  }
+}
+
+/**
+ * @brief Entry function for the time entry selection state
+ *
+ */
+void entry_stateTimeEntrySelection()
+{
+  int numOfTasks = workspaceEntries[registeredWorkspaceIndex].numOfEntries;
+  sleepyDog.feed();
+  M5Dial.Display.clear();
+  M5Dial.Display.drawString(String(numOfTasks) + " time entries",
+                            M5Dial.Display.width() / 2,
+                            M5Dial.Display.height() / 2);
+  soundManager.playSound(readyToneId);
+}
+
+/**
  * @brief Workplace selection state function
  *
  */
-void stateWorkplaceSelection()
+void do_stateWorkplaceSelection()
 {
   togglApiErrorCode_t errorCode = TOGGL_API_EC_OK;
   if (machine.executeOnce)
   {
-    /* This will be executed only when entering the state */
-    if (wifiManager.isConnected() == false)
-    {
-      wifiManager.connect(settingsJson);
-    }
-
-    if (wifiManager.isConnected())
-    {
-      M5Dial.Display.clear();
-      M5Dial.Display.drawString("Getting",
-                                M5Dial.Display.width() / 2,
-                                M5Dial.Display.height() / 2);
-      M5Dial.Display.drawString("workspaces",
-                                M5Dial.Display.width() / 2,
-                                M5Dial.Display.height() / 2 + 30);
-      errorCode = toggl.getWorkSpaces(receivedWorkspaces, MAX_NUM_WORKSPACES, &numReceivedWorkspaces);
-
-      if (errorCode != TOGGL_API_EC_OK)
-      {
-        M5Dial.Display.clear();
-        M5Dial.Display.drawString("Error " + String(errorCode),
-                                  M5Dial.Display.width() / 2,
-                                  M5Dial.Display.height() / 2);
-        /** @todo Display a more comprehensive error in the screen */
-        delay(1000);
-        nextState = S0;
-      }
-      else
-      {
-        if (numReceivedWorkspaces == 0)
-        {
-          M5Dial.Display.clear();
-          M5Dial.Display.drawString("No workspaces",
-                                    M5Dial.Display.width() / 2,
-                                    M5Dial.Display.height() / 2);
-        }
-        else
-        {
-          M5Dial.Display.clear();
-          M5Dial.Display.drawString("Select",
-                                    M5Dial.Display.width() / 2,
-                                    M5Dial.Display.height() / 2);
-          M5Dial.Display.drawString("workspace",
-                                    M5Dial.Display.width() / 2,
-                                    M5Dial.Display.height() / 2 + 30);
-        }
-      }
-    }
+    entry_stateWorkplaceSelection();
   }
 
   /* This will be executed cyclically while in this state */
@@ -140,7 +197,7 @@ void stateWorkplaceSelection()
     if (newPosition != oldPosition)
     {
       lastTime = currentTime;
-      M5Dial.Speaker.tone(8000, 20);
+      soundManager.playSound(dialToneId);
       M5Dial.Display.clear();
       oldPosition = newPosition;
       Serial.println(newPosition);
@@ -151,6 +208,7 @@ void stateWorkplaceSelection()
 
     if (M5Dial.BtnA.wasPressed())
     {
+      soundManager.playSound(buttonToneId);
       sleepyDog.feed();
       /* Lets find the tasks for the selected workspace */
       for (int i = 0; i < MAX_NUM_WORKSPACES; i++)
@@ -163,6 +221,7 @@ void stateWorkplaceSelection()
         }
       }
 
+      /** @todo This might be moved to the entry function of the state for time entry selection */
       /* And lets assign the project name to each of the configured tasks in the selected workspace */
       toggl.getProjects(projects, MAX_NUM_PROJECTS, &numProjectsReceived, workspaceEntries[registeredWorkspaceIndex].workspaceId);
       for (int i = 0; i < workspaceEntries[registeredWorkspaceIndex].numOfEntries; i++)
@@ -176,7 +235,7 @@ void stateWorkplaceSelection()
           }
         }
       }
-      nextState = S1;
+      nextState = stateTimeEntrySelection;
     }
   }
 }
@@ -185,7 +244,7 @@ void stateWorkplaceSelection()
  * @brief Time entry selection state function
  *
  */
-void stateTimeEntrySelection()
+void do_stateTimeEntrySelection()
 {
   int numOfTasks = workspaceEntries[registeredWorkspaceIndex].numOfEntries;
   Task *selectedTasks = workspaceEntries[registeredWorkspaceIndex].entries;
@@ -193,18 +252,14 @@ void stateTimeEntrySelection()
 
   if (machine.executeOnce)
   {
-    sleepyDog.feed();
-    M5Dial.Display.clear();
-    M5Dial.Display.drawString(String(numOfTasks) + " time entries",
-                              M5Dial.Display.width() / 2,
-                              M5Dial.Display.height() / 2);
+    entry_stateTimeEntrySelection();
   }
 
   long newPosition = M5Dial.Encoder.read();
   if (newPosition != oldPosition)
   {
     sleepyDog.feed();
-    M5Dial.Speaker.tone(8000, 20);
+    soundManager.playSound(dialToneId);
     M5Dial.Display.clear();
     oldPosition = newPosition;
     Serial.println(newPosition);
@@ -220,7 +275,7 @@ void stateTimeEntrySelection()
   if (M5Dial.BtnA.wasPressed())
   {
     sleepyDog.feed();
-    M5Dial.Speaker.tone(6000, 20);
+    soundManager.playSound(buttonToneId);
     String currentTimestamp = "No time";
 
     if (wifiManager.isConnected() == false)
@@ -233,7 +288,7 @@ void stateTimeEntrySelection()
       int index = ((newPosition % numOfTasks) + numOfTasks) % numOfTasks;
       if (index == 0)
       {
-        nextState = S0;
+        nextState = stateWorksplaceSelection;
       }
       else if (index == 1)
       {
@@ -251,6 +306,7 @@ void stateTimeEntrySelection()
           M5Dial.Display.drawString("No current entry",
                                     M5Dial.Display.width() / 2,
                                     M5Dial.Display.height() / 2);
+          soundManager.playSound(errorToneId);
           delay(1000);
         }
         else if (errorCode != TOGGL_API_EC_OK)
@@ -260,6 +316,7 @@ void stateTimeEntrySelection()
           M5Dial.Display.drawString("Error get: " + String(errorCode),
                                     M5Dial.Display.width() / 2,
                                     M5Dial.Display.height() / 2);
+          soundManager.playSound(errorToneId);
         }
         else
         {
@@ -272,8 +329,9 @@ void stateTimeEntrySelection()
             M5Dial.Display.drawString("Error stop:" + String(errorCode),
                                       M5Dial.Display.width() / 2,
                                       M5Dial.Display.height() / 2);
+            soundManager.playSound(errorToneId);
             delay(1000);
-            nextState = S1;
+            nextState = stateTimeEntrySelection;
           }
           else
           {
@@ -285,6 +343,7 @@ void stateTimeEntrySelection()
                                       M5Dial.Display.width() / 2,
                                       M5Dial.Display.height() / 2);
             M5Dial.Encoder.readAndReset();
+            soundManager.playSound(readyToneId);
           }
         }
       }
@@ -292,7 +351,6 @@ void stateTimeEntrySelection()
       {
         TimeEntry newTimeEntry;
         /* Lets create a new time entry */
-        M5Dial.Speaker.tone(6000, 20);
         M5Dial.Display.clear();
         M5Dial.Display.drawString("Getting UTC",
                                   M5Dial.Display.width() / 2,
@@ -304,7 +362,6 @@ void stateTimeEntrySelection()
           Serial.println(currentTimestamp.c_str());
 
           M5Dial.Display.clear();
-          M5Dial.Speaker.tone(6000, 20);
           M5Dial.Display.drawString(currentTimestamp.c_str(),
                                     M5Dial.Display.width() / 2,
                                     M5Dial.Display.height() / 2);
@@ -321,7 +378,7 @@ void stateTimeEntrySelection()
           if (errorCode == TOGGL_API_EC_OK)
           {
             M5Dial.Display.clear();
-            M5Dial.Speaker.tone(6000, 20);
+            soundManager.playSound(buttonToneId);
             /* Show info about the newly created time entry from the API */
             M5Dial.Display.setTextSize(0.45);
             M5Dial.Display.drawString(newTimeEntry.getAt().c_str(),
@@ -349,6 +406,7 @@ void stateTimeEntrySelection()
           M5Dial.Display.drawString("No time",
                                     M5Dial.Display.width() / 2,
                                     M5Dial.Display.height() / 2);
+          soundManager.playSound(errorToneId);
         }
       }
     }
@@ -357,11 +415,11 @@ void stateTimeEntrySelection()
   /* Move to the low power state if the encoder or the button were not used in some time */
   if (sleepyDog.isSleeping())
   {
-    nextState = S2;
+    nextState = stateLowPower;
   }
 }
 
-void stateLowPower()
+void do_stateLowPower()
 {
   if (machine.executeOnce)
   {
@@ -374,9 +432,9 @@ void stateLowPower()
   if (newPosition != oldPosition)
   {
     /* Turn screen on when the dial is moved */
-    M5Dial.Speaker.tone(8000, 20);
+    soundManager.playSound(dialToneId);
     screenOn();
-    nextState = S1;
+    nextState = stateTimeEntrySelection;
   }
 }
 
@@ -460,6 +518,12 @@ void setup()
   M5Dial.Display.setTextFont(&fonts::Orbitron_Light_32);
   M5Dial.Display.setTextSize(0.75);
   M5Dial.Display.setRotation(2);
+
+  // Register common sounds
+  soundManager.registerSound(1000, 40, dialToneId);   // High pitch dial rotation sound
+  soundManager.registerSound(6000, 20, buttonToneId); // Button press sound
+  soundManager.registerSound(12000, 20, readyToneId); // Action required by the user
+  soundManager.registerSound(1000, 100, errorToneId);   // Error sound
 
   wifiManager.connect(settingsJson);
   readEntriesJSON();

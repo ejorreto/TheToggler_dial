@@ -19,6 +19,7 @@ WifiManager::wifi_connect_status_t WifiManager::connect(const String& settingsJs
         
         if (isConnected) {
             displayStatus();
+            delay(1000U);
             return WIFI_CONNECT_SUCCESS;
         }
     }
