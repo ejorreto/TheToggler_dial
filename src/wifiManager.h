@@ -23,12 +23,16 @@ public:
 private:
     static const uint8_t MAX_RETRIES = 5U;
     static const uint16_t DELAY_BETWEEN_RETRIES_MS = 5000U;
+    static const uint16_t SCAN_TIMEOUT_MS = 10000U;
     
     String lastSuccessfulSSID;
     String lastSuccessfulPassword;
 
     bool tryConnection(const char* ssid, const char* password, uint8_t numRetries);
     void displayStatus(const char* ssid = nullptr) const;
+    bool isNetworkAvailable(const char* ssid) const;
+    void scanNetworks();
+    int16_t lastScanResult;
 };
 
 #endif // WIFI_MANAGER_H
