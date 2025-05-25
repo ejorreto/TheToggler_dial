@@ -201,9 +201,14 @@ void do_stateWorkplaceSelection()
       M5Dial.Display.clear();
       oldPosition = newPosition;
       Serial.println(newPosition);
-      M5Dial.Display.drawString(receivedWorkspaces[((newPosition % numReceivedWorkspaces) + numReceivedWorkspaces) % numReceivedWorkspaces].getName().c_str(),
+      Workspace *selectedWorkspace = &receivedWorkspaces[((newPosition % numReceivedWorkspaces) + numReceivedWorkspaces) % numReceivedWorkspaces];
+      M5Dial.Display.drawString(selectedWorkspace->getName().c_str(),
                                 M5Dial.Display.width() / 2,
                                 M5Dial.Display.height() / 2);
+      /* Organization name is not coming with the API request, even if the Toggl documentation says so */
+      // M5Dial.Display.drawString(selectedWorkspace->getOrganizationName().c_str(),
+      //                           M5Dial.Display.width() / 2,
+      //                           M5Dial.Display.height() / 2 + 20);
     }
 
     if (M5Dial.BtnA.wasPressed())
@@ -222,7 +227,7 @@ void do_stateWorkplaceSelection()
       }
 
       /** @todo This might be moved to the entry function of the state for time entry selection */
-      /* And lets assign the project name to each of the configured tasks in the selected workspace */
+      /* And lets assign the project name and color to each of the configured tasks */
       toggl.getProjects(projects, MAX_NUM_PROJECTS, &numProjectsReceived, workspaceEntries[registeredWorkspaceIndex].workspaceId);
       for (int i = 0; i < workspaceEntries[registeredWorkspaceIndex].numOfEntries; i++)
       {
@@ -231,7 +236,7 @@ void do_stateWorkplaceSelection()
           if (workspaceEntries[registeredWorkspaceIndex].entries[i].getProjectId() == projects[j].getId())
           {
             workspaceEntries[registeredWorkspaceIndex].entries[i].setProjectName(projects[j].getName());
-            // Serial.println("Set Project name: " + String(workspaceEntries[registeredWorkspaceIndex].entries[i].getProjectName().c_str()));
+            workspaceEntries[registeredWorkspaceIndex].entries[i].setProjectColor(projects[j].getColor());
           }
         }
       }
@@ -264,10 +269,28 @@ void do_stateTimeEntrySelection()
     oldPosition = newPosition;
     Serial.println(newPosition);
 
-    M5Dial.Display.drawString(selectedTasks[((newPosition % numOfTasks) + numOfTasks) % numOfTasks].getDescription().c_str(),
+    int index = ((newPosition % numOfTasks) + numOfTasks) % numOfTasks;
+
+    // Draw a colored circle or indicator using the project color
+    std::string colorHex = selectedTasks[index].getProjectColor();
+    if (!colorHex.empty())
+    {
+      // Convert hex color (e.g. "#990099") to RGB
+      uint32_t color = strtol(colorHex.substr(1).c_str(), NULL, 16);
+      uint8_t r = (color >> 16) & 0xFF;
+      uint8_t g = (color >> 8) & 0xFF;
+      uint8_t b = color & 0xFF;
+
+      // Draw a colored circle at the top of the display
+      M5Dial.Display.fillCircle(M5Dial.Display.width() / 2, 40, 20,
+                                M5Dial.Display.color565(r, g, b));
+    }
+
+    // Draw task description and project name
+    M5Dial.Display.drawString(selectedTasks[index].getDescription().c_str(),
                               M5Dial.Display.width() / 2,
                               M5Dial.Display.height() / 2);
-    M5Dial.Display.drawString((selectedTasks[((newPosition % numOfTasks) + numOfTasks) % numOfTasks].getProjectName()).c_str(),
+    M5Dial.Display.drawString(selectedTasks[index].getProjectName().c_str(),
                               M5Dial.Display.width() / 2,
                               M5Dial.Display.height() / 2 + 30);
   }
@@ -523,7 +546,7 @@ void setup()
   soundManager.registerSound(1000, 40, dialToneId);   // High pitch dial rotation sound
   soundManager.registerSound(6000, 20, buttonToneId); // Button press sound
   soundManager.registerSound(12000, 20, readyToneId); // Action required by the user
-  soundManager.registerSound(1000, 100, errorToneId);   // Error sound
+  soundManager.registerSound(1000, 100, errorToneId); // Error sound
 
   wifiManager.connect(settingsJson);
   readEntriesJSON();
