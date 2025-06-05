@@ -97,6 +97,8 @@ void screenOn()
 void entry_stateWorkplaceSelection()
 {
   togglApiErrorCode_t errorCode = TOGGL_API_EC_OK;
+
+  Serial.println("Entering workplace selection state");
   /* This will be executed only when entering the state */
   if (wifiManager.isConnected() == false)
   {
@@ -168,6 +170,7 @@ void entry_stateWorkplaceSelection()
  */
 void entry_stateTimeEntrySelection()
 {
+  Serial.println("Entering time entry selection state");
   int numOfTasks = workspaceEntries[registeredWorkspaceIndex].numOfEntries;
   sleepyDog.feed();
   M5Dial.Display.clear();
@@ -433,6 +436,15 @@ void do_stateTimeEntrySelection()
         }
       }
     }
+    else
+    {
+      M5Dial.Display.clear();
+      M5Dial.Display.drawString("No wifi",
+                                M5Dial.Display.width() / 2,
+                                M5Dial.Display.height() / 2);
+      soundManager.playSound(errorToneId);
+      delay(1000);
+    }
   }
 
   /* Move to the low power state if the encoder or the button were not used in some time */
@@ -548,7 +560,26 @@ void setup()
   soundManager.registerSound(12000, 20, readyToneId); // Action required by the user
   soundManager.registerSound(1000, 100, errorToneId); // Error sound
 
-  wifiManager.connect(settingsJson);
+  WifiManager::wifi_connect_status_t status = wifiManager.connect(settingsJson);
+  if(status != WifiManager::WIFI_CONNECT_SUCCESS)
+  {
+    soundManager.playSound(errorToneId);
+    M5Dial.Display.clear();
+    M5Dial.Display.drawString("Wifi error: " + String(status),
+                              M5Dial.Display.width() / 2,
+                              M5Dial.Display.height() / 2);
+    delay(1000);
+  }
+  else
+  {
+    M5Dial.Display.clear();
+    M5Dial.Display.drawString("Wifi connected",
+                              M5Dial.Display.width() / 2,
+                              M5Dial.Display.height() / 2);
+    soundManager.playSound(readyToneId);
+    delay(1000);
+  }
+
   readEntriesJSON();
   toggl.setAuth(Token);
 }
